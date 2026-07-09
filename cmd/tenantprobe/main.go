@@ -36,6 +36,8 @@ func main() {
 
 	scenarioPath := flag.String("scenario", "", "path to a YAML scenario file (overrides tenant/attack generation and adapter selection)")
 
+	membership := flag.Bool("membership", false, "enable the behavioral membership-inference sweep (catches silent leaks where the victim's data influences the answer without any verbatim canary)")
+
 	detectorsFlag := flag.String("detectors", "", "comma-separated detectors to run (default: core set). Available: "+strings.Join(detector.Available(), ", "))
 	patternsFlag := flag.String("patterns", "", "comma-separated extra regexes for the PII/secret detector (emit secret_leak)")
 
@@ -83,6 +85,7 @@ func main() {
 		runScenario(*scenarioPath, *target, probe.Config{
 			TopK:        *topK,
 			Concurrency: *concurrency,
+			Membership:  *membership,
 		})
 		return // runScenario calls os.Exit.
 	}
@@ -156,6 +159,7 @@ func main() {
 		NTenants:    *nTenants,
 		TopK:        *topK,
 		Concurrency: *concurrency,
+		Membership:  *membership,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)

@@ -38,6 +38,11 @@ rewritten in Go: one static binary, zero third-party deps in the core (only
 
 ## Phase 3: Depth (the differentiator)
 - [ ] Real pgvector demo app with the intentional tenant-filter bug
+- [x] F9 — Behavioral membership-inference sweep (`-membership`): catches SILENT
+      leaks where the victim's data influences the answer with no verbatim canary.
+      Proven on `SUMMARIZE=1` demo — core detectors PASS (miss it), `-membership`
+      FAILs; quiet on SAFE. Unit tests: fires-on-silent-leak / quiet-when-isolated /
+      no-self-attribution.
 - [ ] Detectors: embedding-similarity match, cache & agent-memory leakage
 - [ ] Prompt-injection attack suite (still scoped to cross-tenant, not generic)
 - [ ] GDPR-style report template

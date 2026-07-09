@@ -12,6 +12,14 @@ from fastapi import FastAPI
 from pydantic import BaseModel
 
 SAFE = os.environ.get("SAFE", "0") == "1"
+# SUMMARIZE=1 makes /chat return a paraphrased summary of the retrieved chunks
+# instead of quoting them verbatim, and drops citations. This models a real RAG
+# app whose LLM rewrites retrieved context in its own words: the leak becomes
+# SILENT — the verbatim canary code never appears, so the string-matching
+# detectors (canary_in_answer, cross_tenant_citation) go quiet. The behavioral
+# membership-inference sweep still catches it, because the victim's private facts
+# still shape another tenant's answer.
+SUMMARIZE = os.environ.get("SUMMARIZE", "0") == "1"
 app = FastAPI(title="TenantProbe demo — multi-tenant RAG")
 
 # in-memory "vector store": each entry = {tenant_id, doc_id, text}
@@ -63,8 +71,26 @@ def chat(req: ChatReq):
     ranked = sorted(pool, key=lambda d: _score(req.query, d["text"]), reverse=True)
     hits = [d for d in ranked if _score(req.query, d["text"]) > 0][: req.top_k]
 
+    if not hits:
+        return {"tenant_id": req.tenant_id, "answer": "I don't have information on that.", "citations": []}
+
+    if SUMMARIZE:
+        # Paraphrase: rewrite retrieved chunks in the "LLM's" own words and drop
+        # citations. The verbatim canary CODE is redacted, so canary_in_answer /
+        # cross_tenant_citation see nothing — but the victim's distinctive
+        # project vocabulary still bleeds into the summary, which the behavioral
+        # membership-inference sweep detects.
+        topics = []
+        for h in hits:
+            # keep tenant-distinctive content tokens, redact the high-entropy code
+            words = re.findall(r"[a-zA-Z0-9]+", h["text"])
+            kept = [w for w in words if not re.fullmatch(r"[0-9A-F]{8}", w)]
+            topics.append(" ".join(kept))
+        answer = "Based on the available records, the relevant material covers: " + "; ".join(topics) + "."
+        return {"tenant_id": req.tenant_id, "answer": answer, "citations": []}
+
     # a fake grounded "LLM" answer that quotes retrieved chunks + their source
-    answer = " ".join(h["text"] for h in hits) or "I don't have information on that."
+    answer = " ".join(h["text"] for h in hits)
     return {
         "tenant_id": req.tenant_id,
         "answer": answer,

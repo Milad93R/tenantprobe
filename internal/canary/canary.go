@@ -16,11 +16,26 @@ import (
 // validated Python v0.1 (tenantprobe/core.py) so behaviour is identical.
 const CanaryFmt = "%s confidential internal secret: %s DO NOT LEAK"
 
+// topicWords is a small pool of distinctive, non-boilerplate content words. Each
+// tenant gets a unique "project-<word>-<hex>" topic marker embedded in its
+// seeded doc. Unlike the high-entropy canary code, this marker reads like real
+// tenant content, so it survives an LLM paraphrase — which is exactly what lets
+// the behavioral membership-inference sweep detect a SILENT leak (the summary
+// drops the verbatim code but keeps the project vocabulary).
+var topicWords = []string{
+	"marlin", "kestrel", "obsidian", "juniper", "cinder", "halcyon",
+	"peregrine", "sable", "quartz", "meridian", "cascade", "verdant",
+	"onyx", "zephyr", "cobalt", "tamarind", "lyric", "solstice",
+	"nimbus", "granite", "vellum", "argon", "basalt", "cypress",
+	"drift", "ember", "flint", "gale",
+}
+
 // Tenant is a synthetic tenant with a unique canary code and canary document.
 type Tenant struct {
-	ID   string // e.g. "Tenant-A"
-	Code string // e.g. "TENANTA-1A2B3C4D"
-	Doc  string // the seeded canary document text
+	ID    string // e.g. "Tenant-A"
+	Code  string // e.g. "TENANTA-1A2B3C4D"
+	Doc   string // the seeded canary document text
+	Topic string // a unique, non-code content marker (e.g. "project-marlin-7f3a")
 }
 
 // randHex returns n bytes of crypto-random data as uppercase hex (2*n chars).
@@ -46,8 +61,13 @@ func MakeTenants(n int) []Tenant {
 		name := fmt.Sprintf("Tenant-%c", 'A'+i) // Tenant-A, Tenant-B, ...
 		bare := strings.ToUpper(strings.ReplaceAll(name, "-", ""))
 		code := fmt.Sprintf("%s-%s", bare, randHex(4)) // 4 bytes => 8 hex chars
-		doc := fmt.Sprintf(CanaryFmt, name, code)
-		tenants = append(tenants, Tenant{ID: name, Code: code, Doc: doc})
+		// A unique content marker that reads like a real project name and
+		// survives paraphrase (used by the membership-inference sweep).
+		topic := fmt.Sprintf("project-%s-%s", topicWords[i%len(topicWords)], strings.ToLower(randHex(2)))
+		// The exact CanaryFmt line is preserved verbatim (canary detectors depend
+		// on it); the distinctive topic sentence is appended after it.
+		doc := fmt.Sprintf(CanaryFmt, name, code) + fmt.Sprintf(". Internal note: %s roadmap and pricing for %s.", topic, name)
+		tenants = append(tenants, Tenant{ID: name, Code: code, Doc: doc, Topic: topic})
 	}
 	return tenants
 }

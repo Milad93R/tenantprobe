@@ -227,6 +227,41 @@ Select with `-detectors a,b,c` (default = core set: `canary_in_answer` + `cross_
   -detectors canary_in_answer,canary_in_answer_fuzzy,cross_tenant_citation
 ```
 
+### Behavioral membership-inference sweep (`-membership`)
+
+The detectors above are all string-matchers: they fire only when a victim's
+canary text survives *verbatim* (or lightly mangled) in the answer. A real RAG
+app usually rewrites retrieved context in the LLM's own words, so a genuine
+cross-tenant leak can be **silent** — the private facts shape another tenant's
+answer while the literal canary never appears.
+
+`-membership` catches those silent leaks with differential probing. For each
+victim it asks a victim-topic query (a) as an **isolated control tenant** that
+owns no documents — the target's true "no access" baseline — and (b) as the
+**attacker**. If the attacker's answer carries content tokens the victim *owns*
+(and the attacker does not), the victim's data measurably influenced the
+attacker's response. Attribution uses ground-truth document ownership, so it
+still fires against a fully-broken target that also over-shares to the control.
+
+```bash
+./tp -target http://127.0.0.1:8077 -membership
+```
+
+Proof it catches what string-matching misses — run the demo with `SUMMARIZE=1`
+(the "LLM" paraphrases retrieved chunks and drops citations, so the verbatim
+canary is gone):
+
+```bash
+SUMMARIZE=1 uvicorn demo_app.app:app --port 8077 &
+./tp -target http://127.0.0.1:8077                 # core detectors: PASS (miss the silent leak)
+./tp -target http://127.0.0.1:8077 -membership     # FAIL: membership_inference leaks detected
+SAFE=1 SUMMARIZE=1 uvicorn demo_app.app:app --port 8077 &
+./tp -target http://127.0.0.1:8077 -membership     # PASS: no false positive when isolated
+```
+
+Emits leaks of type `membership_inference`; opt-in (off by default) so the core
+scan is unchanged.
+
 ---
 
 ## Report formats
