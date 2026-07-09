@@ -2,3 +2,10 @@
 __pycache__/
 *.pyc
 .pytest_cache/
+
+# Go build artifacts. The compiled binary is named `tp` (not `tenantprobe`)
+# because the Python v0.1 package already occupies the `tenantprobe/` directory.
+/tp
+/tp-bin
+tenantprobe/tenantprobe
+
