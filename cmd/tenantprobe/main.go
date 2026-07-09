@@ -21,8 +21,12 @@ func main() {
 	topK := flag.Int("top-k", 3, "top_k passed to the target's chat endpoint")
 	concurrency := flag.Int("concurrency", 8, "max in-flight probes")
 
-	adapterName := flag.String("adapter", "demo", "target adapter: demo | generic")
+	adapterName := flag.String("adapter", "demo", "target adapter: demo | generic | openai")
 	adapterConfig := flag.String("adapter-config", "", "path to a JSON GenericConfig file (generic adapter)")
+
+	// OpenAI-compatible adapter options.
+	openaiKey := flag.String("openai-key", "", "openai: API key (or set OPENAI_API_KEY)")
+	openaiModel := flag.String("openai-model", adapter.DefaultOpenAIModel, "openai: model name")
 
 	// Generic-adapter overrides (also settable via -adapter-config JSON).
 	gResetPath := flag.String("g-reset-path", "/reset", "generic: reset endpoint path (empty to skip)")
@@ -83,6 +87,19 @@ func main() {
 			cfg.TenantHeader = *gTenantHeader
 		}
 		a = adapter.NewGenericAdapter(cfg)
+	case "openai":
+		cfg := adapter.NewOpenAIConfig(*target)
+		cfg.Model = *openaiModel
+		cfg.APIKey = *openaiKey
+		if cfg.APIKey == "" {
+			cfg.APIKey = os.Getenv("OPENAI_API_KEY")
+		}
+		oa, err := adapter.NewOpenAIAdapter(cfg)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+			os.Exit(2)
+		}
+		a = oa
 	default:
 		fmt.Fprintf(os.Stderr, "tenantprobe: unknown adapter %q (want demo|generic)\n", *adapterName)
 		os.Exit(2)
