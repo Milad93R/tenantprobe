@@ -1,0 +1,79 @@
+name: TenantProbe (Go) self-test
+on: [push, pull_request]
+
+# Self-test: run the composite Action against the bundled Python demo in two
+# legs. The demo is deliberately vulnerable by default and tenant-scoped-safe
+# when SAFE=1. We assert the SAFE leg PASSES (green) and the vulnerable leg
+# FAILS as expected (the scanner catches the leak). Both are required for the
+# job to succeed, proving the scanner both detects leaks and stays quiet when
+# isolation is correct.
+jobs:
+  self-test:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - mode: vulnerable
+            safe: "0"
+            expect: fail   # scanner should detect the cross-tenant leak
+          - mode: safe
+            safe: "1"
+            expect: pass   # isolation fixed → no leaks
+    name: ${{ matrix.mode }} demo
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install demo deps
+        run: pip install -r requirements.txt
+
+      - name: Start demo RAG app (SAFE=${{ matrix.safe }})
+        run: |
+          SAFE=${{ matrix.safe }} nohup uvicorn demo_app.app:app --port 8077 \
+            > uvicorn.log 2>&1 &
+          for i in $(seq 1 40); do
+            curl -sf -X POST http://127.0.0.1:8077/reset && break
+            sleep 0.5
+          done
+
+      # Run the composite Action from this same repo. continue-on-error lets us
+      # inspect the outcome in the assertion step below instead of the job
+      # simply going red on the vulnerable leg.
+      - name: Run TenantProbe Action
+        id: probe
+        continue-on-error: true
+        uses: ./
+        with:
+          target: http://127.0.0.1:8077
+          adapter: demo
+          report-format: junit
+          report-path: tenantprobe-report.xml
+          fail-on-leak: "true"
+
+      - name: Assert expected outcome (${{ matrix.expect }})
+        run: |
+          set -euo pipefail
+          OUTCOME='${{ steps.probe.outcome }}'   # success | failure
+          LEAKED='${{ steps.probe.outputs.leaked }}'
+          echo "Action outcome=$OUTCOME leaked=$LEAKED (expected: ${{ matrix.expect }})"
+          if [ '${{ matrix.expect }}' = 'pass' ]; then
+            if [ "$OUTCOME" != 'success' ] || [ "$LEAKED" = 'true' ]; then
+              echo "::error::SAFE leg should PASS with no leaks, got outcome=$OUTCOME leaked=$LEAKED"
+              exit 1
+            fi
+            echo "OK: SAFE demo passed with no cross-tenant leaks."
+          else
+            if [ "$OUTCOME" != 'failure' ] || [ "$LEAKED" != 'true' ]; then
+              echo "::error::Vulnerable leg should FAIL on a detected leak, got outcome=$OUTCOME leaked=$LEAKED"
+              exit 1
+            fi
+            echo "OK: vulnerable demo correctly failed the build (leak detected)."
+          fi
+
+      - name: Show report
+        if: always()
+        run: cat tenantprobe-report.xml || true

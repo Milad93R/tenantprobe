@@ -1,0 +1,129 @@
+name: "TenantProbe"
+description: >-
+  Cross-tenant isolation red-team scanner for multi-tenant RAG/agent APIs.
+  Seeds synthetic tenants with unique canary secrets, attacks the target from
+  one tenant trying to reach another's data, and fails the job on any
+  cross-tenant leak.
+author: "milad93r"
+branding:
+  icon: "shield"
+  color: "red"
+
+inputs:
+  target:
+    description: "Base URL of the multi-tenant target API to scan."
+    required: true
+  scenario:
+    description: "Path to a YAML scenario file. Overrides tenant/attack generation and adapter selection."
+    required: false
+    default: ""
+  adapter:
+    description: "Target adapter: demo | generic | openai."
+    required: false
+    default: "demo"
+  tenants:
+    description: "Number of synthetic tenants to seed (ignored when a scenario is given)."
+    required: false
+    default: "2"
+  report-format:
+    description: "Report format: console | json | junit."
+    required: false
+    default: "junit"
+  report-path:
+    description: "Path to write the report to (relative to the workspace)."
+    required: false
+    default: "tenantprobe-report.xml"
+  fail-on-leak:
+    description: "Fail the job when a cross-tenant leak is detected (true|false)."
+    required: false
+    default: "true"
+  binary:
+    description: >-
+      Path to a prebuilt tenantprobe binary. When set and the file exists, the
+      Action skips the Go build and uses this binary instead of building from
+      source.
+    required: false
+    default: ""
+  go-version:
+    description: "Go version to set up when building from source."
+    required: false
+    default: "1.23"
+  extra-args:
+    description: "Additional raw CLI flags appended verbatim to the tenantprobe invocation."
+    required: false
+    default: ""
+
+outputs:
+  report:
+    description: "Path to the written report file."
+    value: ${{ inputs.report-path }}
+  leaked:
+    description: "true when a cross-tenant leak was detected, false otherwise."
+    value: ${{ steps.scan.outputs.leaked }}
+
+runs:
+  using: "composite"
+  steps:
+    - name: Set up Go
+      if: inputs.binary == '' || hashFiles(inputs.binary) == ''
+      uses: actions/setup-go@v5
+      with:
+        go-version: ${{ inputs.go-version }}
+
+    - name: Resolve tenantprobe binary
+      id: bin
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -n "${{ inputs.binary }}" ] && [ -f "${{ inputs.binary }}" ]; then
+          echo "Using prebuilt binary: ${{ inputs.binary }}"
+          echo "path=${{ inputs.binary }}" >> "$GITHUB_OUTPUT"
+        else
+          echo "Building tenantprobe from source (${{ github.action_path }})"
+          CGO_ENABLED=0 go build -C "${{ github.action_path }}" -o "${{ github.action_path }}/tp" ./cmd/tenantprobe
+          echo "path=${{ github.action_path }}/tp" >> "$GITHUB_OUTPUT"
+        fi
+
+    - name: Run TenantProbe
+      id: scan
+      shell: bash
+      run: |
+        set -uo pipefail
+        BIN="${{ steps.bin.outputs.path }}"
+        ARGS=( -target "${{ inputs.target }}" -report "${{ inputs.report-format }}" -out "${{ inputs.report-path }}" )
+        if [ -n "${{ inputs.scenario }}" ]; then
+          ARGS+=( -scenario "${{ inputs.scenario }}" )
+        else
+          ARGS+=( -adapter "${{ inputs.adapter }}" -tenants "${{ inputs.tenants }}" )
+        fi
+        if [ -n "${{ inputs.extra-args }}" ]; then
+          # shellcheck disable=SC2206
+          ARGS+=( ${{ inputs.extra-args }} )
+        fi
+        echo "+ $BIN ${ARGS[*]}"
+        "$BIN" "${ARGS[@]}"
+        CODE=$?
+        echo "exit-code=$CODE" >> "$GITHUB_OUTPUT"
+        if [ "$CODE" -eq 0 ]; then
+          echo "leaked=false" >> "$GITHUB_OUTPUT"
+        elif [ "$CODE" -eq 1 ]; then
+          echo "leaked=true" >> "$GITHUB_OUTPUT"
+        else
+          # Exit 2 = tool error (bad flags, target unreachable): always fail hard.
+          echo "leaked=error" >> "$GITHUB_OUTPUT"
+          echo "::error::tenantprobe exited with tool error code $CODE"
+          exit "$CODE"
+        fi
+        if [ "$CODE" -eq 1 ] && [ "${{ inputs.fail-on-leak }}" != "false" ]; then
+          echo "::error::TenantProbe detected a cross-tenant leak."
+          exit 1
+        fi
+        exit 0
+
+    - name: Upload TenantProbe report
+      if: always() && inputs.report-path != ''
+      uses: actions/upload-artifact@v4
+      with:
+        name: tenantprobe-report
+        path: ${{ inputs.report-path }}
+        if-no-files-found: ignore
