@@ -1,0 +1,16 @@
+name: TenantProbe
+on: [push, pull_request]
+jobs:
+  cross-tenant-isolation:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -r requirements.txt
+      - name: Start demo RAG app
+        run: |
+          SAFE=${SAFE:-1} uvicorn demo_app.app:app --port 8077 &
+          for i in $(seq 1 30); do curl -sf -X POST localhost:8077/reset && break; sleep 0.5; done
+      - name: Run TenantProbe (fails the build on any cross-tenant leak)
+        run: python -m tenantprobe.cli http://127.0.0.1:8077
