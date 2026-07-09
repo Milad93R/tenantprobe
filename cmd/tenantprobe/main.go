@@ -13,6 +13,7 @@ import (
 	"github.com/milad93r/tenantprobe/internal/adapter"
 	"github.com/milad93r/tenantprobe/internal/detector"
 	"github.com/milad93r/tenantprobe/internal/probe"
+	"github.com/milad93r/tenantprobe/internal/scenario"
 )
 
 func main() {
@@ -23,6 +24,8 @@ func main() {
 
 	adapterName := flag.String("adapter", "demo", "target adapter: demo | generic | openai")
 	adapterConfig := flag.String("adapter-config", "", "path to a JSON GenericConfig file (generic adapter)")
+
+	scenarioPath := flag.String("scenario", "", "path to a YAML scenario file (overrides tenant/attack generation and adapter selection)")
 
 	// OpenAI-compatible adapter options.
 	openaiKey := flag.String("openai-key", "", "openai: API key (or set OPENAI_API_KEY)")
@@ -48,6 +51,16 @@ func main() {
 	// Allow a positional URL to override -target for ergonomic CLI use.
 	if args := flag.Args(); len(args) > 0 && args[0] != "" {
 		*target = args[0]
+	}
+
+	// Scenario mode: a YAML file fully describes the scan (adapter, tenants,
+	// attacks, assertions) and overrides the flag-driven wiring below.
+	if *scenarioPath != "" {
+		runScenario(*scenarioPath, *target, probe.Config{
+			TopK:        *topK,
+			Concurrency: *concurrency,
+		})
+		return // runScenario calls os.Exit.
 	}
 
 	var a adapter.Adapter
@@ -114,7 +127,47 @@ func main() {
 		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
 		os.Exit(2)
 	}
+	emitAndExit(res)
+}
 
+// runScenario loads a YAML scenario, wires the adapter/tenants/attacks/detectors
+// it declares, runs the scan, and exits with the CI-appropriate code.
+func runScenario(path, target string, cfg probe.Config) {
+	sc, err := scenario.Load(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+		os.Exit(2)
+	}
+	// A scenario without an explicit target inherits the -target/positional URL.
+	if sc.Target == "" {
+		sc.Target = target
+	}
+
+	a, err := sc.BuildAdapter()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+		os.Exit(2)
+	}
+	dets, err := sc.Detectors()
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+		os.Exit(2)
+	}
+
+	cfg.Tenants = sc.TenantSpecs()
+	cfg.Attacks = sc.AttackList()
+
+	res, err := probe.Run(sc.Target, a, dets, cfg)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+		os.Exit(2)
+	}
+	emitAndExit(res)
+}
+
+// emitAndExit prints the JSON result plus a human summary and exits 0 (pass) or
+// 1 (leak) so CI can gate on the exit code.
+func emitAndExit(res *probe.Result) {
 	out, err := json.MarshalIndent(res, "", "  ")
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tenantprobe: marshal result: %v\n", err)

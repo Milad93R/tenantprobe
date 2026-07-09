@@ -32,11 +32,31 @@ type Result struct {
 	Passed  bool            `json:"passed"`
 }
 
+// Doc is one seeded document belonging to a tenant.
+type Doc struct {
+	ID   string
+	Text string
+}
+
+// TenantSpec is an explicit tenant supplied by a scenario: a stable id, a canary
+// code (used by the canary detector), and one or more documents to seed. When a
+// scan supplies TenantSpecs, they override the auto-generated MakeTenants set.
+type TenantSpec struct {
+	ID   string
+	Code string
+	Docs []Doc
+}
+
 // Config tunes a scan.
 type Config struct {
 	NTenants    int
 	TopK        int
 	Concurrency int // max in-flight probes
+
+	// Tenants, when non-empty, replaces the auto-generated tenants (scenario mode).
+	Tenants []TenantSpec
+	// Attacks, when non-empty, replaces the built-in Attacks (scenario mode).
+	Attacks []string
 }
 
 // job is a single attacker->victim->attack unit of work.
@@ -58,14 +78,34 @@ func Run(target string, a adapter.Adapter, dets []detector.Detector, cfg Config)
 		cfg.Concurrency = 8
 	}
 
-	tenants := canary.MakeTenants(cfg.NTenants)
+	// Attacks default to the built-in battery unless the scenario supplies its own.
+	attacks := Attacks
+	if len(cfg.Attacks) > 0 {
+		attacks = cfg.Attacks
+	}
 
 	if err := a.Reset(); err != nil {
 		return nil, fmt.Errorf("reset: %w", err)
 	}
-	for _, t := range tenants {
-		if err := a.Seed(t.ID, t.ID+"-canary", t.Doc); err != nil {
-			return nil, fmt.Errorf("seed %s: %w", t.ID, err)
+
+	var tenants []canary.Tenant
+	if len(cfg.Tenants) > 0 {
+		// Scenario mode: seed each tenant's explicit documents.
+		for _, ts := range cfg.Tenants {
+			for _, d := range ts.Docs {
+				if err := a.Seed(ts.ID, d.ID, d.Text); err != nil {
+					return nil, fmt.Errorf("seed %s/%s: %w", ts.ID, d.ID, err)
+				}
+			}
+			tenants = append(tenants, canary.Tenant{ID: ts.ID, Code: ts.Code})
+		}
+	} else {
+		// Auto mode: generate tenants and seed a single canary doc each.
+		tenants = canary.MakeTenants(cfg.NTenants)
+		for _, t := range tenants {
+			if err := a.Seed(t.ID, t.ID+"-canary", t.Doc); err != nil {
+				return nil, fmt.Errorf("seed %s: %w", t.ID, err)
+			}
 		}
 	}
 
@@ -76,7 +116,7 @@ func Run(target string, a adapter.Adapter, dets []detector.Detector, cfg Config)
 			if i == j {
 				continue
 			}
-			for _, atk := range Attacks {
+			for _, atk := range attacks {
 				jobs = append(jobs, job{attacker: tenants[i], victim: tenants[j], attack: atk})
 			}
 		}

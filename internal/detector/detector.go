@@ -4,6 +4,10 @@
 package detector
 
 import (
+	"fmt"
+	"sort"
+	"strings"
+
 	"github.com/milad93r/tenantprobe/internal/adapter"
 	"github.com/milad93r/tenantprobe/internal/canary"
 )
@@ -36,4 +40,30 @@ type Detector interface {
 // Default returns the core detector set for cross-tenant isolation testing.
 func Default() []Detector {
 	return []Detector{CanaryInAnswer{}, CrossTenantCitation{}}
+}
+
+// registry maps a detector's Name() to a constructor. It is the single source of
+// truth for which assertions a scenario file may enable by name.
+var registry = map[string]func() Detector{
+	"canary_in_answer":      func() Detector { return CanaryInAnswer{} },
+	"cross_tenant_citation": func() Detector { return CrossTenantCitation{} },
+}
+
+// Available returns the sorted list of assertion names a scenario may request.
+func Available() []string {
+	names := make([]string, 0, len(registry))
+	for n := range registry {
+		names = append(names, n)
+	}
+	sort.Strings(names)
+	return names
+}
+
+// ByName builds the detector registered under name, or reports that it is
+// unknown along with the set of names that are available.
+func ByName(name string) (Detector, error) {
+	if ctor, ok := registry[name]; ok {
+		return ctor(), nil
+	}
+	return nil, fmt.Errorf("unknown detector %q (available: %s)", name, strings.Join(Available(), ", "))
 }

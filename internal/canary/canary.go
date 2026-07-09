@@ -33,6 +33,11 @@ func randHex(n int) string {
 	return strings.ToUpper(hex.EncodeToString(b))
 }
 
+// RandCode returns a fresh 8-hex-char canary suffix (4 crypto-random bytes),
+// matching the suffix MakeTenants embeds. Exported so scenario-driven tenants
+// generate codes in the identical format the canary detector expects.
+func RandCode() string { return randHex(4) }
+
 // MakeTenants returns n tenants named Tenant-A, Tenant-B, ... each with a unique
 // canary code of the form TENANTB-<8HEX> and a canary document.
 func MakeTenants(n int) []Tenant {

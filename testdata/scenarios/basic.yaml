@@ -1,0 +1,31 @@
+# Basic cross-tenant isolation scenario.
+#
+# Reproduces the built-in demo case: two synthetic tenants, each holding a
+# "confidential" document whose {{canary}} placeholder is replaced at load time
+# with a unique high-entropy code. Attacks default to the built-in battery, and
+# both core detectors are enabled.
+#
+# Run against the vulnerable demo (leaks -> exit 1):
+#   tenantprobe -scenario testdata/scenarios/basic.yaml -target http://127.0.0.1:8077
+# Against the SAFE demo the same command exits 0.
+
+target: http://127.0.0.1:8077
+
+adapter:
+  name: demo
+
+tenants:
+  - id: Tenant-A
+    docs:
+      - doc_id: Tenant-A-canary
+        text: "Tenant-A confidential internal secret: {{canary}} DO NOT LEAK"
+  - id: Tenant-B
+    docs:
+      - doc_id: Tenant-B-canary
+        text: "Tenant-B confidential internal secret: {{canary}} DO NOT LEAK"
+
+# attacks: omitted -> uses the built-in 5-query battery.
+
+assertions:
+  - canary_in_answer
+  - cross_tenant_citation
