@@ -62,6 +62,9 @@ type Scenario struct {
 	Attacks []string `yaml:"attacks"`
 	// Assertions names the detectors to enable. Defaults to the core set.
 	Assertions []string `yaml:"assertions"`
+	// Patterns are extra user-supplied regexes fed to the PII/secret detector
+	// (they emit secret_leak). Only consulted when a regex assertion is enabled.
+	Patterns []string `yaml:"patterns"`
 
 	// codes records the generated canary code per tenant id after Load.
 	codes map[string]string
@@ -187,18 +190,11 @@ func (s *Scenario) TenantSpecs() []probe.TenantSpec {
 // AttackList returns the scenario attacks (may be empty, meaning "use built-ins").
 func (s *Scenario) AttackList() []string { return s.Attacks }
 
-// Detectors builds the detector set named by assertions. It assumes normalize
-// already validated the names.
+// Detectors builds the detector set named by assertions, deduplicating aliases
+// and threading any user-supplied patterns into the PII/secret regex detector. It
+// assumes normalize already validated the names.
 func (s *Scenario) Detectors() ([]detector.Detector, error) {
-	dets := make([]detector.Detector, 0, len(s.Assertions))
-	for _, name := range s.Assertions {
-		d, err := detector.ByName(name)
-		if err != nil {
-			return nil, err
-		}
-		dets = append(dets, d)
-	}
-	return dets, nil
+	return detector.Select(s.Assertions, s.Patterns)
 }
 
 // EnabledAssertions returns the resolved assertion names (post-default).

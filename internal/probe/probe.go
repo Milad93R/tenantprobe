@@ -89,6 +89,10 @@ func Run(target string, a adapter.Adapter, dets []detector.Detector, cfg Config)
 	}
 
 	var tenants []canary.Tenant
+	// docsByTenant records each tenant's seeded document texts so content
+	// detectors (e.g. the PII/secret regex) can attribute a match to a tenant and
+	// stay strictly cross-tenant.
+	docsByTenant := make(map[string][]string)
 	if len(cfg.Tenants) > 0 {
 		// Scenario mode: seed each tenant's explicit documents.
 		for _, ts := range cfg.Tenants {
@@ -96,6 +100,7 @@ func Run(target string, a adapter.Adapter, dets []detector.Detector, cfg Config)
 				if err := a.Seed(ts.ID, d.ID, d.Text); err != nil {
 					return nil, fmt.Errorf("seed %s/%s: %w", ts.ID, d.ID, err)
 				}
+				docsByTenant[ts.ID] = append(docsByTenant[ts.ID], d.Text)
 			}
 			tenants = append(tenants, canary.Tenant{ID: ts.ID, Code: ts.Code})
 		}
@@ -106,6 +111,7 @@ func Run(target string, a adapter.Adapter, dets []detector.Detector, cfg Config)
 			if err := a.Seed(t.ID, t.ID+"-canary", t.Doc); err != nil {
 				return nil, fmt.Errorf("seed %s: %w", t.ID, err)
 			}
+			docsByTenant[t.ID] = append(docsByTenant[t.ID], t.Doc)
 		}
 	}
 
@@ -146,11 +152,13 @@ func Run(target string, a adapter.Adapter, dets []detector.Detector, cfg Config)
 				return
 			}
 			p := detector.Probe{
-				Attacker:  jb.attacker,
-				Victim:    jb.victim,
-				Attack:    jb.attack,
-				Answer:    answer,
-				Citations: citations,
+				Attacker:     jb.attacker,
+				Victim:       jb.victim,
+				Attack:       jb.attack,
+				Answer:       answer,
+				Citations:    citations,
+				AttackerDocs: docsByTenant[jb.attacker.ID],
+				VictimDocs:   docsByTenant[jb.victim.ID],
 			}
 			var found []detector.Leak
 			for _, det := range dets {

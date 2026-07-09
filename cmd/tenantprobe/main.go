@@ -9,6 +9,7 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strings"
 
 	"github.com/milad93r/tenantprobe/internal/adapter"
 	"github.com/milad93r/tenantprobe/internal/detector"
@@ -26,6 +27,9 @@ func main() {
 	adapterConfig := flag.String("adapter-config", "", "path to a JSON GenericConfig file (generic adapter)")
 
 	scenarioPath := flag.String("scenario", "", "path to a YAML scenario file (overrides tenant/attack generation and adapter selection)")
+
+	detectorsFlag := flag.String("detectors", "", "comma-separated detectors to run (default: core set). Available: "+strings.Join(detector.Available(), ", "))
+	patternsFlag := flag.String("patterns", "", "comma-separated extra regexes for the PII/secret detector (emit secret_leak)")
 
 	// OpenAI-compatible adapter options.
 	openaiKey := flag.String("openai-key", "", "openai: API key (or set OPENAI_API_KEY)")
@@ -118,7 +122,17 @@ func main() {
 		os.Exit(2)
 	}
 
-	res, err := probe.Run(*target, a, detector.Default(), probe.Config{
+	dets := detector.Default()
+	if names := splitCSV(*detectorsFlag); len(names) > 0 {
+		selected, err := detector.Select(names, splitCSV(*patternsFlag))
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+			os.Exit(2)
+		}
+		dets = selected
+	}
+
+	res, err := probe.Run(*target, a, dets, probe.Config{
 		NTenants:    *nTenants,
 		TopK:        *topK,
 		Concurrency: *concurrency,
@@ -163,6 +177,20 @@ func runScenario(path, target string, cfg probe.Config) {
 		os.Exit(2)
 	}
 	emitAndExit(res)
+}
+
+// splitCSV splits a comma-separated flag value into trimmed, non-empty items.
+func splitCSV(s string) []string {
+	if strings.TrimSpace(s) == "" {
+		return nil
+	}
+	var out []string
+	for _, part := range strings.Split(s, ",") {
+		if p := strings.TrimSpace(part); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }
 
 // emitAndExit prints the JSON result plus a human summary and exits 0 (pass) or

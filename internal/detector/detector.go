@@ -23,12 +23,20 @@ type Leak struct {
 
 // Probe is the read-only view a detector inspects: who attacked whom, with what
 // query, and what the target returned.
+//
+// AttackerDocs and VictimDocs carry the *seeded* document text for each side so a
+// content detector (e.g. the PII/secret regex) can attribute a matched string to
+// a tenant and stay strictly cross-tenant: a match fires only when it traces to
+// the victim's seeded data and not the attacker's own. They may be empty (the
+// canary/citation detectors ignore them).
 type Probe struct {
-	Attacker  canary.Tenant
-	Victim    canary.Tenant
-	Attack    string
-	Answer    string
-	Citations []adapter.Citation
+	Attacker     canary.Tenant
+	Victim       canary.Tenant
+	Attack       string
+	Answer       string
+	Citations    []adapter.Citation
+	AttackerDocs []string
+	VictimDocs   []string
 }
 
 // Detector examines one probe and returns any leaks it found.
@@ -43,10 +51,15 @@ func Default() []Detector {
 }
 
 // registry maps a detector's Name() to a constructor. It is the single source of
-// truth for which assertions a scenario file may enable by name.
+// truth for which assertions a scenario file (or -detectors flag) may enable by
+// name. The regex detector registers under its built-in-pattern names; extra
+// user-supplied patterns are layered on separately via NewRegexDetector.
 var registry = map[string]func() Detector{
-	"canary_in_answer":      func() Detector { return CanaryInAnswer{} },
-	"cross_tenant_citation": func() Detector { return CrossTenantCitation{} },
+	"canary_in_answer":       func() Detector { return CanaryInAnswer{} },
+	"canary_in_answer_fuzzy": func() Detector { return NewCanaryFuzzy(DefaultFuzzyMinLen) },
+	"cross_tenant_citation":  func() Detector { return CrossTenantCitation{} },
+	"pii_leak":               func() Detector { return NewRegexDetector(nil) },
+	"secret_leak":            func() Detector { return NewRegexDetector(nil) },
 }
 
 // Available returns the sorted list of assertion names a scenario may request.
@@ -66,4 +79,29 @@ func ByName(name string) (Detector, error) {
 		return ctor(), nil
 	}
 	return nil, fmt.Errorf("unknown detector %q (available: %s)", name, strings.Join(Available(), ", "))
+}
+
+// Select builds the detectors named in names, deduplicating by Detector.Name() so
+// aliases (e.g. pii_leak / secret_leak, which resolve to the same regex detector)
+// do not run twice. userPatterns are appended to the PII/secret regex detector
+// when it is selected. Returns an error naming the first unknown detector.
+func Select(names []string, userPatterns []string) ([]Detector, error) {
+	dets := make([]Detector, 0, len(names))
+	seen := make(map[string]bool)
+	for _, name := range names {
+		d, err := ByName(name)
+		if err != nil {
+			return nil, err
+		}
+		// The regex detector may carry user patterns; rebuild it with them.
+		if d.Name() == regexDetectorName {
+			d = NewRegexDetector(userPatterns)
+		}
+		if seen[d.Name()] {
+			continue
+		}
+		seen[d.Name()] = true
+		dets = append(dets, d)
+	}
+	return dets, nil
 }
