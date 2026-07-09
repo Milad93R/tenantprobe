@@ -14,7 +14,15 @@ import (
 	"github.com/milad93r/tenantprobe/internal/adapter"
 	"github.com/milad93r/tenantprobe/internal/detector"
 	"github.com/milad93r/tenantprobe/internal/probe"
+	"github.com/milad93r/tenantprobe/internal/report"
 	"github.com/milad93r/tenantprobe/internal/scenario"
+)
+
+// reportFormat and reportOut hold the resolved -report/-out selection so both
+// the scenario and flag paths can share one emit routine.
+var (
+	reportFormat report.Format = report.Console
+	reportOut    string
 )
 
 func main() {
@@ -30,6 +38,9 @@ func main() {
 
 	detectorsFlag := flag.String("detectors", "", "comma-separated detectors to run (default: core set). Available: "+strings.Join(detector.Available(), ", "))
 	patternsFlag := flag.String("patterns", "", "comma-separated extra regexes for the PII/secret detector (emit secret_leak)")
+
+	reportFlag := flag.String("report", "console", "report format: console | json | junit")
+	outFlag := flag.String("out", "", "write the report to this file (default: stdout)")
 
 	// OpenAI-compatible adapter options.
 	openaiKey := flag.String("openai-key", "", "openai: API key (or set OPENAI_API_KEY)")
@@ -56,6 +67,15 @@ func main() {
 	if args := flag.Args(); len(args) > 0 && args[0] != "" {
 		*target = args[0]
 	}
+
+	// Resolve report format/output once for both scan paths.
+	rf, err := report.ParseFormat(*reportFlag)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+		os.Exit(2)
+	}
+	reportFormat = rf
+	reportOut = *outFlag
 
 	// Scenario mode: a YAML file fully describes the scan (adapter, tenants,
 	// attacks, assertions) and overrides the flag-driven wiring below.
@@ -193,20 +213,38 @@ func splitCSV(s string) []string {
 	return out
 }
 
-// emitAndExit prints the JSON result plus a human summary and exits 0 (pass) or
-// 1 (leak) so CI can gate on the exit code.
+// emitAndExit renders the result in the selected report format to the chosen
+// destination (file or stdout) and exits 0 (pass) or 1 (leak) so CI can gate on
+// the exit code. Rendering failures exit 2 (tool error), distinct from a leak.
 func emitAndExit(res *probe.Result) {
-	out, err := json.MarshalIndent(res, "", "  ")
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "tenantprobe: marshal result: %v\n", err)
+	w := os.Stdout
+	if reportOut != "" {
+		f, err := os.Create(reportOut)
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "tenantprobe: open -out %s: %v\n", reportOut, err)
+			os.Exit(2)
+		}
+		defer f.Close()
+		w = f
+	}
+
+	if err := report.Render(w, res, reportFormat); err != nil {
+		fmt.Fprintf(os.Stderr, "tenantprobe: render report: %v\n", err)
 		os.Exit(2)
 	}
-	fmt.Println(string(out))
+
+	// When writing to a file, still print a one-line PASS/FAIL to stdout so CI
+	// logs show the verdict without cracking open the report artefact.
+	if reportOut != "" {
+		if res.Passed {
+			fmt.Printf("PASS: no cross-tenant leaks across %d probes (report: %s)\n", res.Probes, reportOut)
+		} else {
+			fmt.Printf("FAIL: %d cross-tenant leak(s) across %d probes (report: %s)\n", len(res.Leaks), res.Probes, reportOut)
+		}
+	}
 
 	if res.Passed {
-		fmt.Printf("PASS: no cross-tenant leaks across %d probes\n", res.Probes)
 		os.Exit(0)
 	}
-	fmt.Printf("FAIL: %d cross-tenant leak(s) detected across %d probes\n", len(res.Leaks), res.Probes)
 	os.Exit(1)
 }
