@@ -125,8 +125,15 @@ runs:
           ARGS+=( -content-influence )
         fi
         echo "+ $BIN ${ARGS[*]}"
-        "$BIN" "${ARGS[@]}"
-        CODE=$?
+        # Composite-action bash steps run with `-e` injected by the runner.
+        # Put the scanner in a conditional so exit 1 (a leak verdict) can be
+        # captured, reported, and enforced by the final step instead of
+        # aborting this output-producing step.
+        if "$BIN" "${ARGS[@]}"; then
+          CODE=0
+        else
+          CODE=$?
+        fi
         echo "exit-code=$CODE" >> "$GITHUB_OUTPUT"
         if [ "$CODE" -eq 0 ]; then
           echo "leaked=false" >> "$GITHUB_OUTPUT"
