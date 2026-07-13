@@ -45,9 +45,8 @@ type TenantSpec struct {
 // AdapterSpec selects and configures the transport. Only the block matching Name
 // is consulted.
 type AdapterSpec struct {
-	Name    string                 `yaml:"name"`    // demo | generic | openai
+	Name    string                 `yaml:"name"`    // demo | generic
 	Generic *adapter.GenericConfig `yaml:"generic"` // when name == generic
-	OpenAI  *adapter.OpenAIConfig  `yaml:"openai"`  // when name == openai
 }
 
 // Scenario is the parsed top-level file.
@@ -102,9 +101,9 @@ func (s *Scenario) normalize(path string) error {
 		s.Adapter.Name = "demo"
 	}
 	switch s.Adapter.Name {
-	case "demo", "generic", "openai":
+	case "demo", "generic":
 	default:
-		return normalizeErr(path, "adapter.name", fmt.Sprintf("unknown adapter %q (want demo|generic|openai)", s.Adapter.Name))
+		return normalizeErr(path, "adapter.name", fmt.Sprintf("unknown adapter %q (want demo|generic)", s.Adapter.Name))
 	}
 
 	if len(s.Tenants) < 2 {
@@ -217,32 +216,21 @@ func (s *Scenario) BuildAdapter() (adapter.Adapter, error) {
 			}
 			mergeGeneric(&cfg, g)
 		}
-		return adapter.NewGenericAdapter(cfg), nil
-
-	case "openai":
-		cfg := adapter.NewOpenAIConfig(s.Target)
-		if s.Adapter.OpenAI != nil {
-			o := *s.Adapter.OpenAI
-			if o.BaseURL != "" {
-				cfg.BaseURL = o.BaseURL
-			}
-			if o.Model != "" {
-				cfg.Model = o.Model
-			}
-			if o.APIKey != "" {
-				cfg.APIKey = o.APIKey
-			}
-			if o.SystemTemplate != "" {
-				cfg.SystemTemplate = o.SystemTemplate
-			}
-			if o.Headers != nil {
-				cfg.Headers = o.Headers
+		if cfg.Preseeded {
+			for _, code := range s.codes {
+				if code != "" {
+					return nil, fmt.Errorf("scenario: preseeded generic mode cannot use {{canary}}; use literal facts that already exist in the target")
+				}
 			}
 		}
-		if cfg.APIKey == "" {
-			cfg.APIKey = os.Getenv("OPENAI_API_KEY")
+		if len(cfg.Principals) > 0 {
+			for _, tenant := range s.Tenants {
+				if _, ok := cfg.Principals[tenant.ID]; !ok {
+					return nil, fmt.Errorf("scenario: no generic principal configured for tenant %q", tenant.ID)
+				}
+			}
 		}
-		return adapter.NewOpenAIAdapter(cfg)
+		return adapter.NewGenericAdapter(cfg)
 
 	default:
 		return nil, fmt.Errorf("scenario: unknown adapter %q", s.Adapter.Name)
@@ -293,5 +281,14 @@ func mergeGeneric(dst *adapter.GenericConfig, src adapter.GenericConfig) {
 	}
 	if src.Headers != nil {
 		dst.Headers = src.Headers
+	}
+	if src.HeadersFromEnv != nil {
+		dst.HeadersFromEnv = src.HeadersFromEnv
+	}
+	if src.Principals != nil {
+		dst.Principals = src.Principals
+	}
+	if src.Preseeded {
+		dst.Preseeded = true
 	}
 }

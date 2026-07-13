@@ -95,7 +95,10 @@ func TestDetectorFuzzyCanary(t *testing.T) {
 // for values that trace to the victim's seeded docs, and never for a PII-shaped
 // string that belongs to the attacker's own tenant.
 func TestDetectorRegexCrossTenant(t *testing.T) {
-	det := NewRegexDetector(nil)
+	det, err := NewRegexDetector(nil)
+	if err != nil {
+		t.Fatalf("NewRegexDetector: %v", err)
+	}
 
 	victimEmail := "alice@victim-corp.example"
 	victimToken := "sk-livedeadbeef0123456789ABCDEF"
@@ -111,10 +114,10 @@ func TestDetectorRegexCrossTenant(t *testing.T) {
 	}
 
 	cases := []struct {
-		name      string
-		answer    string
-		wantLeak  bool
-		wantType  string // expected leak type when wantLeak
+		name     string
+		answer   string
+		wantLeak bool
+		wantType string // expected leak type when wantLeak
 	}{
 		{
 			name:     "victim email surfaced — pii_leak fires",
@@ -179,7 +182,10 @@ func TestDetectorRegexCrossTenant(t *testing.T) {
 // TestDetectorRegexUserPattern proves a user-supplied pattern is honored and still
 // scoped cross-tenant.
 func TestDetectorRegexUserPattern(t *testing.T) {
-	det := NewRegexDetector([]string{`INV-[0-9]{6}`})
+	det, err := NewRegexDetector([]string{`INV-[0-9]{6}`})
+	if err != nil {
+		t.Fatalf("NewRegexDetector: %v", err)
+	}
 	victimDocs := []string{"internal invoice INV-778899 confidential"}
 	attackerDocs := []string{"my own INV-000001"}
 
@@ -194,6 +200,12 @@ func TestDetectorRegexUserPattern(t *testing.T) {
 	p2 := probeWith("TENANTB-1A2B3C4D", "My invoice INV-000001 is fine.", attackerDocs, victimDocs)
 	if got := det.Detect(p2); len(got) != 0 {
 		t.Fatalf("user pattern self-match: got %+v, want none", got)
+	}
+}
+
+func TestDetectorRejectsInvalidUserPattern(t *testing.T) {
+	if _, err := NewRegexDetector([]string{`[unterminated`}); err == nil {
+		t.Fatal("expected invalid regex to fail configuration")
 	}
 }
 
@@ -213,5 +225,39 @@ func TestDetectorSelectDedup(t *testing.T) {
 	}
 	if names["canary_in_answer_fuzzy"] != 1 {
 		t.Errorf("fuzzy detector appeared %d times, want 1", names["canary_in_answer_fuzzy"])
+	}
+}
+
+func TestDetectorSelectKeepsPIIAndSecretIndependent(t *testing.T) {
+	victimDocs := []string{"email victim@example.com token sk-victimtoken0123456789"}
+	p := probeWith(
+		"TENANTB-1A2B3C4D",
+		"victim@example.com sk-victimtoken0123456789",
+		nil,
+		victimDocs,
+	)
+
+	piiOnly, err := Select([]string{"pii_leak"}, nil)
+	if err != nil {
+		t.Fatalf("Select pii: %v", err)
+	}
+	piiLeaks := piiOnly[0].Detect(p)
+	if len(piiLeaks) != 1 || piiLeaks[0].Type != "pii_leak" {
+		t.Fatalf("pii-only leaks = %+v, want exactly one pii_leak", piiLeaks)
+	}
+
+	secretOnly, err := Select([]string{"secret_leak"}, nil)
+	if err != nil {
+		t.Fatalf("Select secret: %v", err)
+	}
+	secretLeaks := secretOnly[0].Detect(p)
+	if len(secretLeaks) != 1 || secretLeaks[0].Type != "secret_leak" {
+		t.Fatalf("secret-only leaks = %+v, want exactly one secret_leak", secretLeaks)
+	}
+}
+
+func TestDetectorSelectRejectsCustomPatternsWithoutSecretLeak(t *testing.T) {
+	if _, err := Select([]string{"pii_leak"}, []string{`INV-[0-9]+`}); err == nil {
+		t.Fatal("expected custom patterns without secret_leak to fail configuration")
 	}
 }

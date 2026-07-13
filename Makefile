@@ -1,20 +1,20 @@
 # TenantProbe (Go) — single static binary.
-#
-# The output binary is named `tp` rather than `tenantprobe` because the Python
-# v0.1 package already occupies the `tenantprobe/` directory in this repo.
 
-BINARY ?= tp
+BINARY ?= tenantprobe
 
-.PHONY: build vet test clean
+.PHONY: build vet test integration clean
 
 build:
-	CGO_ENABLED=0 go build -o $(BINARY) ./cmd/tenantprobe
+	CGO_ENABLED=0 go build -trimpath -o $(BINARY) ./cmd/tenantprobe
 
 vet:
 	go vet ./...
 
 test:
-	go test ./...
+	go test -race ./...
+
+integration: build
+	./scripts/verify_pgvector.sh
 
 clean:
-	rm -f $(BINARY) tp-bin
+	rm -f $(BINARY)

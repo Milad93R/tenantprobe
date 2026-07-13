@@ -1,0 +1,31 @@
+version: 2
+
+project_name: tenantprobe
+
+builds:
+  - id: tenantprobe
+    main: ./cmd/tenantprobe
+    binary: tenantprobe
+    env:
+      - CGO_ENABLED=0
+    flags:
+      - -trimpath
+    ldflags:
+      - -s -w
+    goos:
+      - linux
+      - darwin
+      - windows
+    goarch:
+      - amd64
+      - arm64
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  sort: asc
+  filters:
+    exclude:
+      - '^docs:'
+      - '^test:'

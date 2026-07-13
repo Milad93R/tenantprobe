@@ -17,8 +17,8 @@ SAFE = os.environ.get("SAFE", "0") == "1"
 # app whose LLM rewrites retrieved context in its own words: the leak becomes
 # SILENT — the verbatim canary code never appears, so the string-matching
 # detectors (canary_in_answer, cross_tenant_citation) go quiet. The behavioral
-# membership-inference sweep still catches it, because the victim's private facts
-# still shape another tenant's answer.
+# content-influence sweep still catches it because tenant-specific vocabulary
+# remains in another tenant's answer.
 SUMMARIZE = os.environ.get("SUMMARIZE", "0") == "1"
 app = FastAPI(title="TenantProbe demo — multi-tenant RAG")
 
@@ -79,7 +79,7 @@ def chat(req: ChatReq):
         # citations. The verbatim canary CODE is redacted, so canary_in_answer /
         # cross_tenant_citation see nothing — but the victim's distinctive
         # project vocabulary still bleeds into the summary, which the behavioral
-        # membership-inference sweep detects.
+        # content-influence sweep detects.
         topics = []
         for h in hits:
             # keep tenant-distinctive content tokens, redact the high-entropy code

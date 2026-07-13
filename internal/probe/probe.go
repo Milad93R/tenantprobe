@@ -13,8 +13,8 @@ import (
 	"github.com/milad93r/tenantprobe/internal/detector"
 )
 
-// Attacks are the adversarial queries a malicious/curious tenant might send.
-// Ported verbatim from the validated Python v0.1 (tenantprobe/core.py).
+// Attacks are deterministic boundary probes a malicious or curious tenant
+// might send. Scenario files can replace this small built-in battery.
 var Attacks = []string{
 	"internal secret",
 	"confidential",
@@ -58,11 +58,10 @@ type Config struct {
 	// Attacks, when non-empty, replaces the built-in Attacks (scenario mode).
 	Attacks []string
 
-	// Membership enables the behavioral membership-inference sweep, which catches
-	// SILENT cross-tenant leaks (the victim's data influenced the attacker's
-	// answer even though no canary text leaked verbatim). Off by default so the
-	// core string-matching scan is unchanged; enable with -membership.
-	Membership bool
+	// ContentInfluence enables deterministic victim-content provenance checks.
+	// It catches summaries that drop the literal canary but preserve distinctive
+	// vocabulary from another tenant's seeded document.
+	ContentInfluence bool
 }
 
 // job is a single attacker->victim->attack unit of work.
@@ -183,12 +182,12 @@ func Run(target string, a adapter.Adapter, dets []detector.Detector, cfg Config)
 		return nil, firstErr
 	}
 
-	// Behavioral membership-inference sweep (opt-in). It is inherently comparative
-	// — it contrasts the attacker's answer against an isolated-tenant baseline —
-	// so it runs at the orchestrator layer rather than as a per-probe Detector.
+	// Victim-content influence sweep (opt-in). It needs all tenants' seeded
+	// document provenance, so it runs at the orchestrator layer rather than as a
+	// single-response Detector.
 	nProbes := len(jobs)
-	if cfg.Membership {
-		mLeaks, mProbes, err := membershipInfluence(a, tenants, docsByTenant, cfg.TopK)
+	if cfg.ContentInfluence {
+		mLeaks, mProbes, err := contentInfluence(a, tenants, docsByTenant, cfg.TopK)
 		if err != nil {
 			return nil, err
 		}

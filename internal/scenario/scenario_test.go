@@ -126,6 +126,90 @@ func TestValidationErrors(t *testing.T) {
 	}
 }
 
+func TestGenericScenarioSupportsCredentialedPrincipals(t *testing.T) {
+	path := writeTemp(t, `
+target: https://rag.example.test
+adapter:
+  name: generic
+  generic:
+    preseeded: true
+    chat: {method: POST, path: /v1/query}
+    tenant_field: context.tenant_id
+    query_field: input.question
+    answer_path: data.answer
+    principals:
+      Acme:
+        tenant_value: org-101
+        headers_from_env: {Authorization: ACME_TEST_TOKEN}
+      Globex:
+        tenant_value: org-202
+        headers_from_env: {Authorization: GLOBEX_TEST_TOKEN}
+tenants:
+  - id: Acme
+    docs: [{doc_id: acme-known, text: "Acme renewal codename is kestrel"}]
+  - id: Globex
+    docs: [{doc_id: globex-known, text: "Globex renewal codename is marlin"}]
+`)
+	sc, err := Load(path)
+	if err != nil {
+		t.Fatalf("Load: %v", err)
+	}
+	if _, err := sc.BuildAdapter(); err != nil {
+		t.Fatalf("BuildAdapter: %v", err)
+	}
+	if got := sc.Adapter.Generic.Principals["Acme"].TenantValue; got != "org-101" {
+		t.Fatalf("Acme tenant value = %q", got)
+	}
+}
+
+func TestGenericScenarioRejectsUnsafePreseededConfiguration(t *testing.T) {
+	t.Run("fresh canary cannot already exist", func(t *testing.T) {
+		path := writeTemp(t, `
+target: https://rag.example.test
+adapter:
+  name: generic
+  generic:
+    preseeded: true
+tenants:
+  - id: Acme
+    docs: [{doc_id: a, text: "private {{canary}}"}]
+  - id: Globex
+    docs: [{doc_id: b, text: "known literal"}]
+`)
+		sc, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if _, err := sc.BuildAdapter(); err == nil || !strings.Contains(err.Error(), "cannot use {{canary}}") {
+			t.Fatalf("BuildAdapter error = %v", err)
+		}
+	})
+
+	t.Run("every tenant needs a principal", func(t *testing.T) {
+		path := writeTemp(t, `
+target: https://rag.example.test
+adapter:
+  name: generic
+  generic:
+    preseeded: true
+    principals:
+      Acme: {tenant_value: org-101}
+tenants:
+  - id: Acme
+    docs: [{doc_id: a, text: "known alpha fact"}]
+  - id: Globex
+    docs: [{doc_id: b, text: "known bravo fact"}]
+`)
+		sc, err := Load(path)
+		if err != nil {
+			t.Fatalf("Load: %v", err)
+		}
+		if _, err := sc.BuildAdapter(); err == nil || !strings.Contains(err.Error(), `tenant "Globex"`) {
+			t.Fatalf("BuildAdapter error = %v", err)
+		}
+	})
+}
+
 func writeTemp(t *testing.T, content string) string {
 	t.Helper()
 	dir := t.TempDir()

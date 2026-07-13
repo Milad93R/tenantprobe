@@ -1,6 +1,7 @@
 package detector
 
 import (
+	"fmt"
 	"regexp"
 	"strings"
 )
@@ -57,24 +58,40 @@ type RegexDetector struct {
 	patterns []pattern
 }
 
-// NewRegexDetector builds the detector with the built-in PII/secret patterns plus
-// any user-supplied patterns (from a scenario). User patterns emit "secret_leak"
-// and are skipped if they fail to compile.
-func NewRegexDetector(userPatterns []string) RegexDetector {
+// NewRegexDetector builds the detector with the built-in PII/secret patterns
+// plus user-supplied patterns. Invalid patterns fail configuration rather than
+// being silently ignored and creating a false sense of coverage.
+func NewRegexDetector(userPatterns []string) (RegexDetector, error) {
+	return newRegexDetector(userPatterns, map[string]bool{
+		"pii_leak":    true,
+		"secret_leak": true,
+	})
+}
+
+// newRegexDetector restricts built-ins to the requested leak types. Custom
+// patterns are secret assertions and are included only when secret_leak is
+// selected.
+func newRegexDetector(userPatterns []string, enabled map[string]bool) (RegexDetector, error) {
 	pats := make([]pattern, 0, len(builtinPatterns)+len(userPatterns))
-	pats = append(pats, builtinPatterns...)
-	for _, up := range userPatterns {
-		up = strings.TrimSpace(up)
-		if up == "" {
-			continue
+	for _, builtIn := range builtinPatterns {
+		if enabled[builtIn.typ] {
+			pats = append(pats, builtIn)
 		}
-		re, err := regexp.Compile(up)
-		if err != nil {
-			continue // ignore invalid user patterns rather than fail the whole scan
-		}
-		pats = append(pats, pattern{name: "user", typ: "secret_leak", re: re})
 	}
-	return RegexDetector{patterns: pats}
+	if enabled["secret_leak"] {
+		for _, up := range userPatterns {
+			up = strings.TrimSpace(up)
+			if up == "" {
+				continue
+			}
+			re, err := regexp.Compile(up)
+			if err != nil {
+				return RegexDetector{}, fmt.Errorf("invalid detector pattern %q: %w", up, err)
+			}
+			pats = append(pats, pattern{name: "user", typ: "secret_leak", re: re})
+		}
+	}
+	return RegexDetector{patterns: pats}, nil
 }
 
 // Name implements Detector.

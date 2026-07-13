@@ -18,7 +18,7 @@ inputs:
     required: false
     default: ""
   adapter:
-    description: "Target adapter: demo | generic | openai."
+    description: "Target adapter: demo | generic."
     required: false
     default: "demo"
   tenants:
@@ -37,6 +37,14 @@ inputs:
     description: "Fail the job when a cross-tenant leak is detected (true|false)."
     required: false
     default: "true"
+  detectors:
+    description: "Optional comma-separated detector names. Empty uses the core detector set."
+    required: false
+    default: ""
+  content-influence:
+    description: "Enable victim-content provenance detection (true|false)."
+    required: false
+    default: "false"
   binary:
     description: >-
       Path to a prebuilt tenantprobe binary. When set and the file exists, the
@@ -44,14 +52,16 @@ inputs:
       source.
     required: false
     default: ""
+  artifact-name:
+    description: >-
+      Artifact name used for the report upload. Give parallel jobs distinct
+      names because artifact names must be unique within a workflow run.
+    required: false
+    default: "tenantprobe-report"
   go-version:
     description: "Go version to set up when building from source."
     required: false
     default: "1.23"
-  extra-args:
-    description: "Additional raw CLI flags appended verbatim to the tenantprobe invocation."
-    required: false
-    default: ""
 
 outputs:
   report:
@@ -73,32 +83,46 @@ runs:
     - name: Resolve tenantprobe binary
       id: bin
       shell: bash
+      env:
+        INPUT_BINARY: ${{ inputs.binary }}
+        ACTION_PATH: ${{ github.action_path }}
       run: |
         set -euo pipefail
-        if [ -n "${{ inputs.binary }}" ] && [ -f "${{ inputs.binary }}" ]; then
-          echo "Using prebuilt binary: ${{ inputs.binary }}"
-          echo "path=${{ inputs.binary }}" >> "$GITHUB_OUTPUT"
+        if [ -n "$INPUT_BINARY" ] && [ -f "$INPUT_BINARY" ]; then
+          echo "Using prebuilt binary: $INPUT_BINARY"
+          echo "path=$INPUT_BINARY" >> "$GITHUB_OUTPUT"
         else
-          echo "Building tenantprobe from source (${{ github.action_path }})"
-          CGO_ENABLED=0 go build -C "${{ github.action_path }}" -o "${{ github.action_path }}/tp" ./cmd/tenantprobe
-          echo "path=${{ github.action_path }}/tp" >> "$GITHUB_OUTPUT"
+          echo "Building tenantprobe from source ($ACTION_PATH)"
+          CGO_ENABLED=0 go build -C "$ACTION_PATH" -o "$ACTION_PATH/tp" ./cmd/tenantprobe
+          echo "path=$ACTION_PATH/tp" >> "$GITHUB_OUTPUT"
         fi
 
     - name: Run TenantProbe
       id: scan
       shell: bash
+      env:
+        INPUT_TARGET: ${{ inputs.target }}
+        INPUT_REPORT_FORMAT: ${{ inputs.report-format }}
+        INPUT_REPORT_PATH: ${{ inputs.report-path }}
+        INPUT_SCENARIO: ${{ inputs.scenario }}
+        INPUT_ADAPTER: ${{ inputs.adapter }}
+        INPUT_TENANTS: ${{ inputs.tenants }}
+        INPUT_DETECTORS: ${{ inputs.detectors }}
+        INPUT_CONTENT_INFLUENCE: ${{ inputs.content-influence }}
       run: |
         set -uo pipefail
         BIN="${{ steps.bin.outputs.path }}"
-        ARGS=( -target "${{ inputs.target }}" -report "${{ inputs.report-format }}" -out "${{ inputs.report-path }}" )
-        if [ -n "${{ inputs.scenario }}" ]; then
-          ARGS+=( -scenario "${{ inputs.scenario }}" )
+        ARGS=( -target "$INPUT_TARGET" -report "$INPUT_REPORT_FORMAT" -out "$INPUT_REPORT_PATH" )
+        if [ -n "$INPUT_SCENARIO" ]; then
+          ARGS+=( -scenario "$INPUT_SCENARIO" )
         else
-          ARGS+=( -adapter "${{ inputs.adapter }}" -tenants "${{ inputs.tenants }}" )
+          ARGS+=( -adapter "$INPUT_ADAPTER" -tenants "$INPUT_TENANTS" )
         fi
-        if [ -n "${{ inputs.extra-args }}" ]; then
-          # shellcheck disable=SC2206
-          ARGS+=( ${{ inputs.extra-args }} )
+        if [ -n "$INPUT_DETECTORS" ]; then
+          ARGS+=( -detectors "$INPUT_DETECTORS" )
+        fi
+        if [ "$INPUT_CONTENT_INFLUENCE" = "true" ]; then
+          ARGS+=( -content-influence )
         fi
         echo "+ $BIN ${ARGS[*]}"
         "$BIN" "${ARGS[@]}"
@@ -109,21 +133,40 @@ runs:
         elif [ "$CODE" -eq 1 ]; then
           echo "leaked=true" >> "$GITHUB_OUTPUT"
         else
-          # Exit 2 = tool error (bad flags, target unreachable): always fail hard.
           echo "leaked=error" >> "$GITHUB_OUTPUT"
-          echo "::error::tenantprobe exited with tool error code $CODE"
-          exit "$CODE"
         fi
-        if [ "$CODE" -eq 1 ] && [ "${{ inputs.fail-on-leak }}" != "false" ]; then
-          echo "::error::TenantProbe detected a cross-tenant leak."
-          exit 1
-        fi
+        # Verdict enforcement is a separate final step. Keeping this step green
+        # ensures its outputs remain available even when the Action must fail.
         exit 0
 
     - name: Upload TenantProbe report
       if: always() && inputs.report-path != ''
       uses: actions/upload-artifact@v4
       with:
-        name: tenantprobe-report
+        name: ${{ inputs.artifact-name }}
         path: ${{ inputs.report-path }}
         if-no-files-found: ignore
+
+    - name: Enforce TenantProbe verdict
+      shell: bash
+      env:
+        EXIT_CODE: ${{ steps.scan.outputs.exit-code }}
+        FAIL_ON_LEAK: ${{ inputs.fail-on-leak }}
+      run: |
+        set -euo pipefail
+        case "$EXIT_CODE" in
+          0)
+            exit 0
+            ;;
+          1)
+            if [ "$FAIL_ON_LEAK" = "false" ]; then
+              exit 0
+            fi
+            echo "::error::TenantProbe detected a cross-tenant leak."
+            exit 1
+            ;;
+          *)
+            echo "::error::TenantProbe exited with a tool or target error (code: ${EXIT_CODE:-missing})."
+            exit 2
+            ;;
+        esac

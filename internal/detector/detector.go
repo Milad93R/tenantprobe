@@ -58,8 +58,8 @@ var registry = map[string]func() Detector{
 	"canary_in_answer":       func() Detector { return CanaryInAnswer{} },
 	"canary_in_answer_fuzzy": func() Detector { return NewCanaryFuzzy(DefaultFuzzyMinLen) },
 	"cross_tenant_citation":  func() Detector { return CrossTenantCitation{} },
-	"pii_leak":               func() Detector { return NewRegexDetector(nil) },
-	"secret_leak":            func() Detector { return NewRegexDetector(nil) },
+	"pii_leak":               func() Detector { d, _ := NewRegexDetector(nil); return d },
+	"secret_leak":            func() Detector { d, _ := NewRegexDetector(nil); return d },
 }
 
 // Available returns the sorted list of assertion names a scenario may request.
@@ -88,19 +88,30 @@ func ByName(name string) (Detector, error) {
 func Select(names []string, userPatterns []string) ([]Detector, error) {
 	dets := make([]Detector, 0, len(names))
 	seen := make(map[string]bool)
+	regexTypes := make(map[string]bool)
 	for _, name := range names {
+		if name == "pii_leak" || name == "secret_leak" {
+			regexTypes[name] = true
+			continue
+		}
 		d, err := ByName(name)
 		if err != nil {
 			return nil, err
-		}
-		// The regex detector may carry user patterns; rebuild it with them.
-		if d.Name() == regexDetectorName {
-			d = NewRegexDetector(userPatterns)
 		}
 		if seen[d.Name()] {
 			continue
 		}
 		seen[d.Name()] = true
+		dets = append(dets, d)
+	}
+	if len(regexTypes) > 0 {
+		if len(userPatterns) > 0 && !regexTypes["secret_leak"] {
+			return nil, fmt.Errorf("custom detector patterns require secret_leak to be selected")
+		}
+		d, err := newRegexDetector(userPatterns, regexTypes)
+		if err != nil {
+			return nil, err
+		}
 		dets = append(dets, d)
 	}
 	return dets, nil

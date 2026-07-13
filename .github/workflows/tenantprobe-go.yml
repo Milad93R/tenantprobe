@@ -1,6 +1,9 @@
 name: TenantProbe (Go) self-test
 on: [push, pull_request]
 
+permissions:
+  contents: read
+
 # Self-test: run the composite Action against the bundled Python demo in two
 # legs. The demo is deliberately vulnerable by default and tenant-scoped-safe
 # when SAFE=1. We assert the SAFE leg PASSES (green) and the vulnerable leg
@@ -36,9 +39,13 @@ jobs:
           SAFE=${{ matrix.safe }} nohup uvicorn demo_app.app:app --port 8077 \
             > uvicorn.log 2>&1 &
           for i in $(seq 1 40); do
-            curl -sf -X POST http://127.0.0.1:8077/reset && break
+            if curl -sf -X POST http://127.0.0.1:8077/reset; then
+              exit 0
+            fi
             sleep 0.5
           done
+          cat uvicorn.log
+          exit 1
 
       # Run the composite Action from this same repo. continue-on-error lets us
       # inspect the outcome in the assertion step below instead of the job
@@ -52,6 +59,7 @@ jobs:
           adapter: demo
           report-format: junit
           report-path: tenantprobe-report.xml
+          artifact-name: tenantprobe-${{ matrix.mode }}
           fail-on-leak: "true"
 
       - name: Assert expected outcome (${{ matrix.expect }})

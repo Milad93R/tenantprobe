@@ -12,16 +12,14 @@ import (
 	"strings"
 )
 
-// CanaryFmt is the exact document format seeded for each tenant. It mirrors the
-// validated Python v0.1 (tenantprobe/core.py) so behaviour is identical.
+// CanaryFmt is the exact document format seeded for each tenant.
 const CanaryFmt = "%s confidential internal secret: %s DO NOT LEAK"
 
 // topicWords is a small pool of distinctive, non-boilerplate content words. Each
 // tenant gets a unique "project-<word>-<hex>" topic marker embedded in its
 // seeded doc. Unlike the high-entropy canary code, this marker reads like real
-// tenant content, so it survives an LLM paraphrase — which is exactly what lets
-// the behavioral membership-inference sweep detect a SILENT leak (the summary
-// drops the verbatim code but keeps the project vocabulary).
+// tenant content, so it often survives summarization and can be checked by the
+// opt-in content-influence detector.
 var topicWords = []string{
 	"marlin", "kestrel", "obsidian", "juniper", "cinder", "halcyon",
 	"peregrine", "sable", "quartz", "meridian", "cascade", "verdant",
@@ -62,7 +60,7 @@ func MakeTenants(n int) []Tenant {
 		bare := strings.ToUpper(strings.ReplaceAll(name, "-", ""))
 		code := fmt.Sprintf("%s-%s", bare, randHex(4)) // 4 bytes => 8 hex chars
 		// A unique content marker that reads like a real project name and
-		// survives paraphrase (used by the membership-inference sweep).
+		// survives summarization (used by the content-influence sweep).
 		topic := fmt.Sprintf("project-%s-%s", topicWords[i%len(topicWords)], strings.ToLower(randHex(2)))
 		// The exact CanaryFmt line is preserved verbatim (canary detectors depend
 		// on it); the distinctive topic sentence is appended after it.

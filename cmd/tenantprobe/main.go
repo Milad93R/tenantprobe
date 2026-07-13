@@ -31,12 +31,12 @@ func main() {
 	topK := flag.Int("top-k", 3, "top_k passed to the target's chat endpoint")
 	concurrency := flag.Int("concurrency", 8, "max in-flight probes")
 
-	adapterName := flag.String("adapter", "demo", "target adapter: demo | generic | openai")
+	adapterName := flag.String("adapter", "demo", "target adapter: demo | generic")
 	adapterConfig := flag.String("adapter-config", "", "path to a JSON GenericConfig file (generic adapter)")
 
 	scenarioPath := flag.String("scenario", "", "path to a YAML scenario file (overrides tenant/attack generation and adapter selection)")
 
-	membership := flag.Bool("membership", false, "enable the behavioral membership-inference sweep (catches silent leaks where the victim's data influences the answer without any verbatim canary)")
+	contentInfluence := flag.Bool("content-influence", false, "detect victim-owned vocabulary in another tenant's answer when the literal canary is absent")
 
 	detectorsFlag := flag.String("detectors", "", "comma-separated detectors to run (default: core set). Available: "+strings.Join(detector.Available(), ", "))
 	patternsFlag := flag.String("patterns", "", "comma-separated extra regexes for the PII/secret detector (emit secret_leak)")
@@ -44,13 +44,9 @@ func main() {
 	reportFlag := flag.String("report", "console", "report format: console | json | junit")
 	outFlag := flag.String("out", "", "write the report to this file (default: stdout)")
 
-	// OpenAI-compatible adapter options.
-	openaiKey := flag.String("openai-key", "", "openai: API key (or set OPENAI_API_KEY)")
-	openaiModel := flag.String("openai-model", adapter.DefaultOpenAIModel, "openai: model name")
-
 	// Generic-adapter overrides (also settable via -adapter-config JSON).
-	gResetPath := flag.String("g-reset-path", "/reset", "generic: reset endpoint path (empty to skip)")
-	gSeedPath := flag.String("g-seed-path", "/seed", "generic: seed endpoint path")
+	gResetPath := flag.String("g-reset-path", "", "generic: optional reset endpoint path")
+	gSeedPath := flag.String("g-seed-path", "", "generic: seed endpoint path (preseeded mode is configured in a scenario)")
 	gChatPath := flag.String("g-chat-path", "/chat", "generic: chat endpoint path")
 	gTenantField := flag.String("g-tenant-field", "tenant_id", "generic: request body tenant field (dotted)")
 	gQueryField := flag.String("g-query-field", "query", "generic: request body query field (dotted)")
@@ -83,9 +79,9 @@ func main() {
 	// attacks, assertions) and overrides the flag-driven wiring below.
 	if *scenarioPath != "" {
 		runScenario(*scenarioPath, *target, probe.Config{
-			TopK:        *topK,
-			Concurrency: *concurrency,
-			Membership:  *membership,
+			TopK:             *topK,
+			Concurrency:      *concurrency,
+			ContentInfluence: *contentInfluence,
 		})
 		return // runScenario calls os.Exit.
 	}
@@ -111,7 +107,7 @@ func main() {
 				cfg.BaseURL = *target
 			}
 		} else {
-			// No file: build entirely from flags (defaults already mirror the demo).
+			// No file: build entirely from flags.
 			cfg.Reset.Path = *gResetPath
 			cfg.Seed.Path = *gSeedPath
 			cfg.Chat.Path = *gChatPath
@@ -126,20 +122,16 @@ func main() {
 			cfg.CitationTenantIDKey = *gCitTenantIDKey
 			cfg.TenantHeader = *gTenantHeader
 		}
-		a = adapter.NewGenericAdapter(cfg)
-	case "openai":
-		cfg := adapter.NewOpenAIConfig(*target)
-		cfg.Model = *openaiModel
-		cfg.APIKey = *openaiKey
-		if cfg.APIKey == "" {
-			cfg.APIKey = os.Getenv("OPENAI_API_KEY")
+		if cfg.Preseeded {
+			fmt.Fprintln(os.Stderr, "tenantprobe: generic preseeded mode requires -scenario so expected documents and tenant principals are explicit")
+			os.Exit(2)
 		}
-		oa, err := adapter.NewOpenAIAdapter(cfg)
+		ga, err := adapter.NewGenericAdapter(cfg)
 		if err != nil {
 			fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
 			os.Exit(2)
 		}
-		a = oa
+		a = ga
 	default:
 		fmt.Fprintf(os.Stderr, "tenantprobe: unknown adapter %q (want demo|generic)\n", *adapterName)
 		os.Exit(2)
@@ -156,10 +148,10 @@ func main() {
 	}
 
 	res, err := probe.Run(*target, a, dets, probe.Config{
-		NTenants:    *nTenants,
-		TopK:        *topK,
-		Concurrency: *concurrency,
-		Membership:  *membership,
+		NTenants:         *nTenants,
+		TopK:             *topK,
+		Concurrency:      *concurrency,
+		ContentInfluence: *contentInfluence,
 	})
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)

@@ -1,8 +1,7 @@
 // Package adapter abstracts the multi-tenant target under test.
 //
 // The probe drives targets exclusively through the Adapter interface, so new
-// transports (generic HTTP, OpenAI-compatible, ...) can be added without
-// touching the orchestrator.
+// transports can be added without touching the orchestrator.
 package adapter
 
 // Citation is a single retrieved-document reference returned by a Chat call.

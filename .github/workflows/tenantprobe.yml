@@ -1,16 +1,33 @@
-name: TenantProbe
+name: CI
+
 on: [push, pull_request]
+
+permissions:
+  contents: read
+
 jobs:
-  cross-tenant-isolation:
+  go-quality:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with: { python-version: "3.12" }
-      - run: pip install -r requirements.txt
-      - name: Start demo RAG app
-        run: |
-          SAFE=${SAFE:-1} uvicorn demo_app.app:app --port 8077 &
-          for i in $(seq 1 30); do curl -sf -X POST localhost:8077/reset && break; sleep 0.5; done
-      - name: Run TenantProbe (fails the build on any cross-tenant leak)
-        run: python -m tenantprobe.cli http://127.0.0.1:8077
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+      - name: Unit tests with race detector
+        run: go test -race ./...
+      - name: Vet
+        run: go vet ./...
+      - name: Build static binary
+        run: CGO_ENABLED=0 go build -trimpath -o tenantprobe ./cmd/tenantprobe
+
+  pgvector-jwt-integration:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-go@v5
+        with:
+          go-version: "1.23"
+          cache: true
+      - name: Credentialed pgvector boundary test
+        run: ./scripts/verify_pgvector.sh

@@ -9,7 +9,7 @@ import (
 )
 
 // fakeAdapter is an in-memory multi-tenant RAG target used to exercise the
-// membership-inference sweep without a live HTTP server. isolate toggles tenant
+// content-influence sweep without a live HTTP server. isolate toggles tenant
 // scoping; summarize toggles paraphrase (drops the verbatim canary code but
 // keeps the doc's distinctive vocabulary), modelling a SILENT leak.
 type fakeAdapter struct {
@@ -92,25 +92,25 @@ func seedTenants(f *fakeAdapter, tenants []canary.Tenant) map[string][]string {
 	return docs
 }
 
-func TestMembership_FiresOnSilentLeak(t *testing.T) {
+func TestContentInfluence_FiresWhenSummaryPreservesVictimVocabulary(t *testing.T) {
 	tenants := canary.MakeTenants(2)
 	// Vulnerable (isolate=false) + summarize: the verbatim canary is gone but the
 	// victim's distinctive topic vocabulary bleeds into the other tenant's answer.
 	f := &fakeAdapter{isolate: false, summarize: true}
 	docs := seedTenants(f, tenants)
 
-	leaks, probes, err := membershipInfluence(f, tenants, docs, 3)
+	leaks, probes, err := contentInfluence(f, tenants, docs, 3)
 	if err != nil {
-		t.Fatalf("membershipInfluence: %v", err)
+		t.Fatalf("contentInfluence: %v", err)
 	}
 	if probes == 0 {
 		t.Fatalf("expected probes > 0")
 	}
 	if len(leaks) == 0 {
-		t.Fatalf("expected membership_inference leak on a silent (paraphrased) cross-tenant leak, got none")
+		t.Fatalf("expected content_influence leak when a summary preserves victim vocabulary, got none")
 	}
 	for _, l := range leaks {
-		if l.Type != "membership_inference" {
+		if l.Type != "content_influence" {
 			t.Errorf("unexpected leak type %q", l.Type)
 		}
 		if l.Attacker == l.Victim {
@@ -119,36 +119,46 @@ func TestMembership_FiresOnSilentLeak(t *testing.T) {
 	}
 }
 
-func TestMembership_QuietWhenIsolated(t *testing.T) {
+func TestContentInfluence_QuietWhenIsolated(t *testing.T) {
 	tenants := canary.MakeTenants(2)
 	// Correctly isolated (isolate=true) + summarize: no cross-tenant content, so
 	// the sweep must NOT produce a false positive.
 	f := &fakeAdapter{isolate: true, summarize: true}
 	docs := seedTenants(f, tenants)
 
-	leaks, _, err := membershipInfluence(f, tenants, docs, 3)
+	leaks, _, err := contentInfluence(f, tenants, docs, 3)
 	if err != nil {
-		t.Fatalf("membershipInfluence: %v", err)
+		t.Fatalf("contentInfluence: %v", err)
 	}
 	if len(leaks) != 0 {
 		t.Fatalf("expected no leaks on a correctly isolated target, got %d: %+v", len(leaks), leaks)
 	}
 }
 
-func TestMembership_DoesNotFlagOwnData(t *testing.T) {
+func TestContentInfluence_DoesNotFlagOwnData(t *testing.T) {
 	tenants := canary.MakeTenants(2)
 	// Even in a fully-open target (verbatim), a tenant seeing ONLY its own data
 	// must never be flagged; and a victim token appearing in the attacker's own
 	// docs is excluded. Here we just assert self-attribution never happens.
 	f := &fakeAdapter{isolate: false, summarize: false}
 	docs := seedTenants(f, tenants)
-	leaks, _, err := membershipInfluence(f, tenants, docs, 3)
+	leaks, _, err := contentInfluence(f, tenants, docs, 3)
 	if err != nil {
-		t.Fatalf("membershipInfluence: %v", err)
+		t.Fatalf("contentInfluence: %v", err)
 	}
 	for _, l := range leaks {
 		if l.Attacker == l.Victim {
 			t.Fatalf("self-attribution leak: %+v", l)
 		}
+	}
+}
+
+func TestInfluenceQueryHoldsOutEvidenceTokens(t *testing.T) {
+	docs := []string{"Acme renewal codename kestrel pricing northstar"}
+	query := influenceQuery("Acme", docs)
+	queryTokens := contentTokens(query)
+	heldOut := diffTokens(docTokens(docs), queryTokens)
+	if len(heldOut) < influenceMinNovelTokens {
+		t.Fatalf("query %q leaves only %v; want at least %d held-out tokens", query, heldOut, influenceMinNovelTokens)
 	}
 }
