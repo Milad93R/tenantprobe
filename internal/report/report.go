@@ -68,8 +68,19 @@ func renderConsole(w io.Writer, res *probe.Result) error {
 	fmt.Fprintf(w, "  target:  %s\n", res.Target)
 	fmt.Fprintf(w, "  tenants: %d\n", len(res.Tenants))
 	fmt.Fprintf(w, "  probes:  %d\n", res.Probes)
+	if cf := res.Counterfactual; cf != nil {
+		fmt.Fprintf(w, "  method:  %s (%d bits, alpha %.4g, %d hypotheses)\n", cf.Method, cf.Bits, cf.Alpha, cf.Hypotheses)
+		for _, pair := range cf.Pairs {
+			fmt.Fprintf(w, "  ~ %s -> %s: %d/%d flips, raw p=%.3g, adjusted p=%.3g\n",
+				pair.Attacker, pair.Victim, pair.Concordant, pair.Calibrated, pair.RawP, pair.AdjustedP)
+		}
+	}
 	if len(res.Leaks) == 0 {
 		fmt.Fprintf(w, "  leaks:   0\n")
+		if res.Counterfactual != nil {
+			fmt.Fprintf(w, "PASS: no statistically significant cross-tenant influence across %d probes\n", res.Probes)
+			return nil
+		}
 		fmt.Fprintf(w, "PASS: no cross-tenant leaks across %d probes\n", res.Probes)
 		return nil
 	}

@@ -136,6 +136,27 @@ func TestRenderConsole(t *testing.T) {
 	}
 }
 
+func TestRenderConsoleCounterfactualEvidence(t *testing.T) {
+	res := cleanResult()
+	res.Counterfactual = &probe.CounterfactualAnalysis{
+		Method: "paired-counterfactual-noninterference", Bits: 12, Alpha: 0.05, Hypotheses: 2,
+		Pairs: []probe.CounterfactualPair{{
+			Attacker: "tenant-a", Victim: "tenant-b", Calibrated: 12,
+			Concordant: 0, RawP: 1, AdjustedP: 1,
+		}},
+	}
+	var buf bytes.Buffer
+	if err := Render(&buf, res, Console); err != nil {
+		t.Fatalf("render counterfactual console: %v", err)
+	}
+	out := buf.String()
+	for _, want := range []string{"paired-counterfactual-noninterference", "tenant-a -> tenant-b", "adjusted p=1", "statistically significant"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("counterfactual console output missing %q\n%s", want, out)
+		}
+	}
+}
+
 func TestParseFormat(t *testing.T) {
 	for _, s := range []string{"console", "json", "junit"} {
 		if _, err := ParseFormat(s); err != nil {

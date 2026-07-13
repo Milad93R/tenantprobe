@@ -55,9 +55,29 @@ run_case() {
     "${COMPOSE[@]}" logs app db
     return 1
   fi
+
+	# Exercise the statistical counterfactual oracle through the same real JWT
+	# principals and pgvector lifecycle. The deliberately tiny 32-dimensional
+	# demo embedder causes some retrieval collisions, so use 24 candidates and
+	# let authorized calibration retain the recoverable subset.
+	rm -f "$ROOT/tenantprobe-counterfactual.json"
+	set +e
+	"$ROOT/tenantprobe" -scenario "$ROOT/testdata/scenarios/pgvector-jwt.yaml" \
+		-counterfactual -counterfactual-bits 24 -report json \
+		-out "$ROOT/tenantprobe-counterfactual.json"
+	local counterfactual_actual=$?
+	set -e
+
+	if [ "$counterfactual_actual" -ne "$expected" ]; then
+		echo "pgvector integration: counterfactual SAFE=$safe exit=$counterfactual_actual, expected=$expected" >&2
+		cat "$ROOT/tenantprobe-counterfactual.json" >&2 || true
+		"${COMPOSE[@]}" logs app db
+		return 1
+	fi
 }
 
 CGO_ENABLED=0 go build -trimpath -o "$ROOT/tenantprobe" "$ROOT/cmd/tenantprobe"
 run_case 0 1
 run_case 1 0
-echo "pgvector/JWT integration passed: vulnerable target failed, isolated target passed"
+rm -f "$ROOT/tenantprobe-counterfactual.json"
+echo "pgvector/JWT integration passed: standard and counterfactual audits failed the vulnerable target and passed the isolated target"

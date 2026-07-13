@@ -12,6 +12,7 @@ import (
 	"strings"
 
 	"github.com/milad93r/tenantprobe/internal/adapter"
+	"github.com/milad93r/tenantprobe/internal/canary"
 	"github.com/milad93r/tenantprobe/internal/detector"
 	"github.com/milad93r/tenantprobe/internal/probe"
 	"github.com/milad93r/tenantprobe/internal/report"
@@ -37,6 +38,10 @@ func main() {
 	scenarioPath := flag.String("scenario", "", "path to a YAML scenario file (overrides tenant/attack generation and adapter selection)")
 
 	contentInfluence := flag.Bool("content-influence", false, "detect victim-owned vocabulary in another tenant's answer when the literal canary is absent")
+	counterfactual := flag.Bool("counterfactual", false, "run the experimental paired counterfactual noninterference audit (requires reset + seed endpoints)")
+	counterfactualBits := flag.Int("counterfactual-bits", 24, "randomized semantic fact pairs per victim in a counterfactual audit (1-32)")
+	counterfactualAlpha := flag.Float64("counterfactual-alpha", 0.05, "family-wise significance level for a counterfactual audit")
+	counterfactualTopK := flag.Int("counterfactual-top-k", 1, "retrieval top_k for forced-choice counterfactual questions")
 
 	detectorsFlag := flag.String("detectors", "", "comma-separated detectors to run (default: core set). Available: "+strings.Join(detector.Available(), ", "))
 	patternsFlag := flag.String("patterns", "", "comma-separated extra regexes for the PII/secret detector (emit secret_leak)")
@@ -79,9 +84,13 @@ func main() {
 	// attacks, assertions) and overrides the flag-driven wiring below.
 	if *scenarioPath != "" {
 		runScenario(*scenarioPath, *target, probe.Config{
-			TopK:             *topK,
-			Concurrency:      *concurrency,
-			ContentInfluence: *contentInfluence,
+			TopK:                *topK,
+			Concurrency:         *concurrency,
+			ContentInfluence:    *contentInfluence,
+			Counterfactual:      *counterfactual,
+			CounterfactualBits:  *counterfactualBits,
+			CounterfactualAlpha: *counterfactualAlpha,
+			CounterfactualTopK:  *counterfactualTopK,
 		})
 		return // runScenario calls os.Exit.
 	}
@@ -137,6 +146,29 @@ func main() {
 		os.Exit(2)
 	}
 
+	if *counterfactual {
+		count := *nTenants
+		if count < 2 {
+			count = 2
+		}
+		generated := canary.MakeTenants(count)
+		ids := make([]string, len(generated))
+		for i, tenant := range generated {
+			ids[i] = tenant.ID
+		}
+		res, err := probe.RunCounterfactual(*target, a, probe.CounterfactualConfig{
+			TenantIDs: ids,
+			Bits:      *counterfactualBits,
+			Alpha:     *counterfactualAlpha,
+			TopK:      *counterfactualTopK,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+			os.Exit(2)
+		}
+		emitAndExit(res)
+	}
+
 	dets := detector.Default()
 	if names := splitCSV(*detectorsFlag); len(names) > 0 {
 		selected, err := detector.Select(names, splitCSV(*patternsFlag))
@@ -177,6 +209,25 @@ func runScenario(path, target string, cfg probe.Config) {
 	if err != nil {
 		fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
 		os.Exit(2)
+	}
+	if cfg.Counterfactual {
+		tenantSpecs := sc.TenantSpecs()
+		ids := make([]string, len(tenantSpecs))
+		for i, tenant := range tenantSpecs {
+			ids[i] = tenant.ID
+		}
+		res, err := probe.RunCounterfactual(sc.Target, a, probe.CounterfactualConfig{
+			TenantIDs: ids,
+			Bits:      cfg.CounterfactualBits,
+			Alpha:     cfg.CounterfactualAlpha,
+			TopK:      cfg.CounterfactualTopK,
+		})
+		if err != nil {
+			fmt.Fprintf(os.Stderr, "tenantprobe: %v\n", err)
+			os.Exit(2)
+		}
+		emitAndExit(res)
+		return
 	}
 	dets, err := sc.Detectors()
 	if err != nil {

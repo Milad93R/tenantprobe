@@ -29,10 +29,15 @@ Cross-context leakage in a shared vector store is a concrete instance of
 - Seeded PII or secret-shaped values attributed to another tenant.
 - Opt-in victim-content vocabulary influence when a summary removes the literal
   canary but retains distinctive terms.
+- Experimental paired counterfactual noninterference testing, which mutates only
+  a victim tenant's randomized semantic facts and measures whether another
+  authenticated principal's answers follow those changes with corrected
+  statistical significance.
 
 TenantProbe currently tests the **RAG retrieval/response boundary**. It does not
-yet claim semantic paraphrase detection, cache isolation, conversation-memory
-isolation, or agent tool-call authorization.
+yet test cache isolation, conversation-memory isolation, or agent tool-call
+authorization. The counterfactual mode is a research prototype, not a claim of
+general semantic-paraphrase detection.
 
 For broad prompt-injection, BOLA, cross-session, and RAG-exfiltration testing,
 use a framework such as [Promptfoo](https://github.com/promptfoo/promptfoo) or
@@ -222,6 +227,28 @@ This catches summaries that preserve distinctive source terms after dropping
 the literal canary. It is **not** an embedding-based semantic detector and will
 not catch a complete paraphrase with no shared vocabulary.
 
+### Paired counterfactual noninterference (experimental)
+
+`-counterfactual` builds two controlled target states for each victim. Only the
+victim's randomized binary facts change; the query, attacker credential, and all
+other tenant data remain fixed. It then tests whether attacker answers follow
+those private changes using an exact binomial test and Holm correction across
+the complete attacker-to-victim matrix.
+
+```bash
+./tenantprobe \
+  -scenario tenant-isolation.yaml \
+  -counterfactual \
+  -counterfactual-bits 24 \
+  -counterfactual-alpha 0.05 \
+  -report json
+```
+
+This mode requires working test-only reset and seed endpoints; preseeded targets
+are rejected. Failed authorized calibration is reported as inconclusive (exit
+`2`), never PASS. See [the method, assumptions, statistical oracle, and prior-art
+boundary](docs/COUNTERFACTUAL.md).
+
 ## Reports
 
 ```bash
@@ -247,9 +274,10 @@ Run the complete vulnerable/fixed acceptance test:
 make integration
 ```
 
-The script builds TenantProbe, starts the credentialed pgvector stack, proves
-the vulnerable query exits `1`, restarts it with tenant scoping, proves exit `0`,
-and tears down the containers and volume.
+The script builds TenantProbe, starts the credentialed pgvector stack, and runs
+both the ordinary canary scan and the paired counterfactual audit. Each audit
+must exit `1` against the missing-tenant-predicate target and `0` after tenant
+scoping is enabled. The script then tears down the containers and volume.
 
 ## GitHub Action
 
@@ -259,7 +287,8 @@ the first tagged release. Until then, prefer the CLI or pin the Action to an
 exact commit SHA.
 
 Supported Action inputs are `target`, `scenario`, `adapter`, `tenants`,
-`detectors`, `content-influence`, `report-format`, `report-path`,
+`detectors`, `content-influence`, `counterfactual`, `counterfactual-bits`,
+`counterfactual-alpha`, `counterfactual-top-k`, `report-format`, `report-path`,
 `artifact-name`, `fail-on-leak`, `binary`, and `go-version`.
 
 ## Development

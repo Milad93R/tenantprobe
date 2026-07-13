@@ -82,6 +82,36 @@ jobs:
             echo "OK: vulnerable demo correctly failed the build (leak detected)."
           fi
 
+      - name: Run paired counterfactual audit
+        id: counterfactual
+        continue-on-error: true
+        uses: ./
+        with:
+          target: http://127.0.0.1:8077
+          adapter: demo
+          counterfactual: "true"
+          counterfactual-bits: "12"
+          report-format: json
+          report-path: tenantprobe-counterfactual.json
+          artifact-name: tenantprobe-counterfactual-${{ matrix.mode }}
+          fail-on-leak: "true"
+
+      - name: Assert counterfactual outcome (${{ matrix.expect }})
+        run: |
+          set -euo pipefail
+          OUTCOME='${{ steps.counterfactual.outcome }}'
+          LEAKED='${{ steps.counterfactual.outputs.leaked }}'
+          echo "Counterfactual outcome=$OUTCOME leaked=$LEAKED (expected: ${{ matrix.expect }})"
+          if [ '${{ matrix.expect }}' = 'pass' ]; then
+            test "$OUTCOME" = 'success'
+            test "$LEAKED" = 'false'
+          else
+            test "$OUTCOME" = 'failure'
+            test "$LEAKED" = 'true'
+          fi
+
       - name: Show report
         if: always()
-        run: cat tenantprobe-report.xml || true
+        run: |
+          cat tenantprobe-report.xml || true
+          cat tenantprobe-counterfactual.json || true

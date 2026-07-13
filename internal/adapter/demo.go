@@ -28,6 +28,10 @@ func NewDemoAdapter(baseURL string) *DemoAdapter {
 	}
 }
 
+// SupportsCounterfactualWorlds reports that the demo exposes both destructive
+// reset and temporary ingestion, which paired counterfactual audits require.
+func (d *DemoAdapter) SupportsCounterfactualWorlds() bool { return true }
+
 // post sends a JSON body to path and decodes the JSON response into out (if non-nil).
 func (d *DemoAdapter) post(path string, body any, out any) error {
 	var reader io.Reader

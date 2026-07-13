@@ -25,11 +25,12 @@ var Attacks = []string{
 
 // Result is the outcome of a scan, JSON-serialised by the CLI.
 type Result struct {
-	Target  string          `json:"target"`
-	Tenants []string        `json:"tenants"`
-	Probes  int             `json:"probes"`
-	Leaks   []detector.Leak `json:"leaks"`
-	Passed  bool            `json:"passed"`
+	Target         string                  `json:"target"`
+	Tenants        []string                `json:"tenants"`
+	Probes         int                     `json:"probes"`
+	Leaks          []detector.Leak         `json:"leaks"`
+	Passed         bool                    `json:"passed"`
+	Counterfactual *CounterfactualAnalysis `json:"counterfactual,omitempty"`
 }
 
 // Doc is one seeded document belonging to a tenant.
@@ -62,6 +63,13 @@ type Config struct {
 	// It catches summaries that drop the literal canary but preserve distinctive
 	// vocabulary from another tenant's seeded document.
 	ContentInfluence bool
+
+	// Counterfactual selects the paired counterfactual noninterference audit in
+	// scenario mode. Its lifecycle is separate from the standard detector scan.
+	Counterfactual      bool
+	CounterfactualBits  int
+	CounterfactualAlpha float64
+	CounterfactualTopK  int
 }
 
 // job is a single attacker->victim->attack unit of work.

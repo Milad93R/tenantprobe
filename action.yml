@@ -45,6 +45,22 @@ inputs:
     description: "Enable victim-content provenance detection (true|false)."
     required: false
     default: "false"
+  counterfactual:
+    description: "Run the experimental paired counterfactual noninterference audit (true|false)."
+    required: false
+    default: "false"
+  counterfactual-bits:
+    description: "Randomized fact pairs per victim in counterfactual mode."
+    required: false
+    default: "24"
+  counterfactual-alpha:
+    description: "Family-wise significance level in counterfactual mode."
+    required: false
+    default: "0.05"
+  counterfactual-top-k:
+    description: "Retrieval top_k for counterfactual forced-choice questions."
+    required: false
+    default: "1"
   binary:
     description: >-
       Path to a prebuilt tenantprobe binary. When set and the file exists, the
@@ -109,6 +125,10 @@ runs:
         INPUT_TENANTS: ${{ inputs.tenants }}
         INPUT_DETECTORS: ${{ inputs.detectors }}
         INPUT_CONTENT_INFLUENCE: ${{ inputs.content-influence }}
+        INPUT_COUNTERFACTUAL: ${{ inputs.counterfactual }}
+        INPUT_COUNTERFACTUAL_BITS: ${{ inputs.counterfactual-bits }}
+        INPUT_COUNTERFACTUAL_ALPHA: ${{ inputs.counterfactual-alpha }}
+        INPUT_COUNTERFACTUAL_TOP_K: ${{ inputs.counterfactual-top-k }}
       run: |
         set -uo pipefail
         BIN="${{ steps.bin.outputs.path }}"
@@ -123,6 +143,12 @@ runs:
         fi
         if [ "$INPUT_CONTENT_INFLUENCE" = "true" ]; then
           ARGS+=( -content-influence )
+        fi
+        if [ "$INPUT_COUNTERFACTUAL" = "true" ]; then
+          ARGS+=( -counterfactual
+                  -counterfactual-bits "$INPUT_COUNTERFACTUAL_BITS"
+                  -counterfactual-alpha "$INPUT_COUNTERFACTUAL_ALPHA"
+                  -counterfactual-top-k "$INPUT_COUNTERFACTUAL_TOP_K" )
         fi
         echo "+ $BIN ${ARGS[*]}"
         # Composite-action bash steps run with `-e` injected by the runner.

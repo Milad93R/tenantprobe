@@ -12,6 +12,9 @@
 - [x] Console, JSON, and JUnit reports.
 - [x] Composite GitHub Action and vulnerable/fixed self-test.
 - [x] Deterministic victim-content influence heuristic.
+- [x] Experimental paired counterfactual noninterference audit with authorized
+      calibration, exact binomial evidence, Holm correction, and directed
+      attacker-to-victim attribution.
 - [x] PostgreSQL/pgvector Docker Compose demo with independent JWT principals.
 - [x] End-to-end vulnerable/fixed acceptance script for that demo.
 - [x] Threat model and documented authorization assumptions.
@@ -28,6 +31,8 @@
 - [ ] Cache-isolation sequences: victim warm-up → attacker query.
 - [ ] Conversation/session-memory isolation sequences.
 - [ ] Agent tool-call and credential provenance.
-- [ ] Optional semantic influence detector with repeated controls, calibrated
-      thresholds, and a published false-positive/false-negative benchmark.
+- [ ] Publish a reproducible PCNI benchmark against exact/fuzzy canaries,
+      semantic similarity, DCMI/E-MIA-style membership signals, and
+      AgentSecBench-style paired controls across multiple RAG stacks and LLMs.
+- [ ] Query-efficient sequential testing with predeclared stopping boundaries.
 - [ ] Compliance-oriented evidence report after the technical controls are real.

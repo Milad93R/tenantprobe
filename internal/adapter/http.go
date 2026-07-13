@@ -137,6 +137,13 @@ func NewGenericAdapter(cfg GenericConfig) (*GenericAdapter, error) {
 	}, nil
 }
 
+// SupportsCounterfactualWorlds is true only when the target exposes both a
+// reset endpoint and real temporary ingestion. A no-op reset or preseeded mode
+// cannot construct the paired worlds required by a causal isolation audit.
+func (g *GenericAdapter) SupportsCounterfactualWorlds() bool {
+	return !g.cfg.Preseeded && g.cfg.Reset.Path != "" && g.cfg.Seed.Path != ""
+}
+
 // principal resolves the target-facing tenant value and request headers for a
 // logical scenario tenant. Environment-backed headers fail closed when their
 // variable is missing so a scan cannot accidentally run unauthenticated.

@@ -130,3 +130,34 @@ func TestGenericAdapterRequiresExplicitLifecycle(t *testing.T) {
 		t.Fatal("expected preseeded plus seed endpoint to be rejected")
 	}
 }
+
+func TestGenericAdapterCounterfactualCapabilityRequiresResetAndSeed(t *testing.T) {
+	cfg := adapter.NewGenericConfig("https://example.invalid")
+	cfg.Preseeded = true
+	a, err := adapter.NewGenericAdapter(cfg)
+	if err != nil {
+		t.Fatalf("NewGenericAdapter(preseeded): %v", err)
+	}
+	if a.SupportsCounterfactualWorlds() {
+		t.Fatal("preseeded adapter must not claim counterfactual-world support")
+	}
+
+	cfg = adapter.NewGenericConfig("https://example.invalid")
+	cfg.Seed = adapter.Endpoint{Path: "/seed"}
+	a, err = adapter.NewGenericAdapter(cfg)
+	if err != nil {
+		t.Fatalf("NewGenericAdapter(seed-only): %v", err)
+	}
+	if a.SupportsCounterfactualWorlds() {
+		t.Fatal("adapter without reset must not claim counterfactual-world support")
+	}
+
+	cfg.Reset = adapter.Endpoint{Path: "/reset"}
+	a, err = adapter.NewGenericAdapter(cfg)
+	if err != nil {
+		t.Fatalf("NewGenericAdapter(mutable): %v", err)
+	}
+	if !a.SupportsCounterfactualWorlds() {
+		t.Fatal("adapter with reset and seed should support counterfactual worlds")
+	}
+}
