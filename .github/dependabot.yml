@@ -1,19 +1,5 @@
 version: 2
 updates:
-  - package-ecosystem: gomod
-    directory: /
-    schedule:
-      interval: weekly
-    groups:
-      go-dependencies:
-        patterns: ["*"]
-  - package-ecosystem: pip
-    directory: /
-    schedule:
-      interval: weekly
-    groups:
-      demo-dependencies:
-        patterns: ["*"]
   - package-ecosystem: github-actions
     directory: /
     schedule:
