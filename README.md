@@ -1,5 +1,10 @@
 # TenantProbe
 
+[![CI](https://github.com/Milad93R/tenantprobe/actions/workflows/tenantprobe.yml/badge.svg)](https://github.com/Milad93R/tenantprobe/actions/workflows/tenantprobe.yml)
+[![Isolation self-test](https://github.com/Milad93R/tenantprobe/actions/workflows/tenantprobe-go.yml/badge.svg)](https://github.com/Milad93R/tenantprobe/actions/workflows/tenantprobe-go.yml)
+[![Release](https://img.shields.io/github/v/release/Milad93R/tenantprobe?display_name=tag)](https://github.com/Milad93R/tenantprobe/releases/latest)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+
 **Deterministic cross-tenant isolation tests for multi-tenant RAG APIs.**
 
 TenantProbe creates or references tenant-owned test documents, queries the target
@@ -19,8 +24,8 @@ It is deliberately narrower than a general LLM red-team framework:
 Cross-context leakage in a shared vector store is a concrete instance of
 [OWASP LLM08:2025 — Vector and Embedding Weaknesses](https://genai.owasp.org/llmrisk/llm082025-vector-and-embedding-weaknesses/).
 
-> **Pre-v1 status:** the core and demo work, but TenantProbe has not published a
-> tagged release or prebuilt binaries yet. See [Roadmap](#roadmap).
+> **v0.1 status:** the core, demos, CI action, and prebuilt release binaries are
+> available. The counterfactual detector remains experimental. See [Roadmap](#roadmap).
 
 ## What it tests today
 
@@ -44,9 +49,11 @@ use a framework such as [Promptfoo](https://github.com/promptfoo/promptfoo) or
 [garak](https://github.com/NVIDIA/garak). TenantProbe's narrower role is a
 fixture-driven, credentialed isolation contract test that can run on every build.
 
-## Install from source
+## Install
 
-Go 1.23 or newer is required until release binaries are published.
+Download a prebuilt archive and checksum from the
+[latest GitHub release](https://github.com/Milad93R/tenantprobe/releases/latest),
+or install with Go 1.23 or newer:
 
 ```bash
 go install github.com/milad93r/tenantprobe/cmd/tenantprobe@latest
