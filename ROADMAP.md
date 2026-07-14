@@ -9,7 +9,7 @@
 - [x] Per-tenant credentials sourced from environment variables.
 - [x] Explicit ingestion and preseeded-fixture lifecycle modes.
 - [x] YAML scenarios with strict field validation.
-- [x] Console, JSON, and JUnit reports.
+- [x] Console, JSON, JUnit, and self-contained HTML security reports.
 - [x] Composite GitHub Action and vulnerable/fixed self-test.
 - [x] Deterministic victim-content influence heuristic.
 - [x] Experimental paired counterfactual noninterference audit with authorized

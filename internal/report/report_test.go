@@ -158,7 +158,7 @@ func TestRenderConsoleCounterfactualEvidence(t *testing.T) {
 }
 
 func TestParseFormat(t *testing.T) {
-	for _, s := range []string{"console", "json", "junit"} {
+	for _, s := range []string{"console", "json", "junit", "html"} {
 		if _, err := ParseFormat(s); err != nil {
 			t.Errorf("ParseFormat(%q) err: %v", s, err)
 		}

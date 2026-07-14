@@ -91,8 +91,8 @@ jobs:
           adapter: demo
           counterfactual: "true"
           counterfactual-bits: "12"
-          report-format: json
-          report-path: tenantprobe-counterfactual.json
+          report-format: html
+          report-path: tenantprobe-counterfactual.html
           artifact-name: tenantprobe-counterfactual-${{ matrix.mode }}
           fail-on-leak: "true"
 
@@ -114,4 +114,4 @@ jobs:
         if: always()
         run: |
           cat tenantprobe-report.xml || true
-          cat tenantprobe-counterfactual.json || true
+          head -n 20 tenantprobe-counterfactual.html || true

@@ -1,8 +1,7 @@
-// Package report renders a probe.Result in one of three CI-friendly formats:
-// a human console summary, indented JSON, or JUnit XML. Format selection and
-// output destination are decoupled from the scan so the orchestrator stays
-// oblivious to presentation. No third-party dependencies: JSON via
-// encoding/json, JUnit via encoding/xml.
+// Package report renders a probe.Result as a human console summary, indented
+// JSON, JUnit XML, or a self-contained HTML security dashboard. Format
+// selection and output destination are decoupled from the scan so the
+// orchestrator stays oblivious to presentation. No third-party dependencies.
 package report
 
 import (
@@ -20,15 +19,16 @@ const (
 	Console Format = "console"
 	JSON    Format = "json"
 	JUnit   Format = "junit"
+	HTML    Format = "html"
 )
 
 // ParseFormat validates a -report flag value.
 func ParseFormat(s string) (Format, error) {
 	switch Format(s) {
-	case Console, JSON, JUnit:
+	case Console, JSON, JUnit, HTML:
 		return Format(s), nil
 	default:
-		return "", fmt.Errorf("unknown report format %q (want console|json|junit)", s)
+		return "", fmt.Errorf("unknown report format %q (want console|json|junit|html)", s)
 	}
 }
 
@@ -41,6 +41,8 @@ func Render(w io.Writer, res *probe.Result, f Format) error {
 		return renderJSON(w, res)
 	case JUnit:
 		return renderJUnit(w, res)
+	case HTML:
+		return renderHTML(w, res)
 	default:
 		return fmt.Errorf("unknown report format %q", f)
 	}

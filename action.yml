@@ -26,7 +26,7 @@ inputs:
     required: false
     default: "2"
   report-format:
-    description: "Report format: console | json | junit."
+    description: "Report format: console | json | junit | html."
     required: false
     default: "junit"
   report-path:

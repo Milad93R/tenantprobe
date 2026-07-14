@@ -13,7 +13,7 @@ It is deliberately narrower than a general LLM red-team framework:
 - **Deterministic and local.** No hosted test generation and no LLM judge are
   required for the core gate.
 - **CI-native.** One statically built Go binary, bounded concurrency, stable exit
-  codes, and console, JSON, or JUnit reports.
+  codes, and console, JSON, JUnit, or self-contained HTML reports.
 - **Target-language agnostic.** The application under test only needs an HTTP API.
 
 Cross-context leakage in a shared vector store is a concrete instance of
@@ -252,9 +252,15 @@ boundary](docs/COUNTERFACTUAL.md).
 ## Reports
 
 ```bash
+./tenantprobe -scenario tenant-isolation.yaml -report html -out tenantprobe-report.html
 ./tenantprobe -scenario tenant-isolation.yaml -report json
 ./tenantprobe -scenario tenant-isolation.yaml -report junit -out tenantprobe-report.xml
 ```
+
+The HTML report is a portable security dashboard with a directed tenant matrix,
+finding evidence, PCNI statistics, remediation guidance, print/PDF support, and
+an embedded JSON download. It contains no external assets or runtime services,
+so it opens directly from disk and works as a GitHub Actions artifact.
 
 When `-out` is set, a one-line verdict still appears in CI logs.
 

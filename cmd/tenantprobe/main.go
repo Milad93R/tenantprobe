@@ -46,7 +46,7 @@ func main() {
 	detectorsFlag := flag.String("detectors", "", "comma-separated detectors to run (default: core set). Available: "+strings.Join(detector.Available(), ", "))
 	patternsFlag := flag.String("patterns", "", "comma-separated extra regexes for the PII/secret detector (emit secret_leak)")
 
-	reportFlag := flag.String("report", "console", "report format: console | json | junit")
+	reportFlag := flag.String("report", "console", "report format: console | json | junit | html")
 	outFlag := flag.String("out", "", "write the report to this file (default: stdout)")
 
 	// Generic-adapter overrides (also settable via -adapter-config JSON).
@@ -284,9 +284,17 @@ func emitAndExit(res *probe.Result) {
 	// logs show the verdict without cracking open the report artefact.
 	if reportOut != "" {
 		if res.Passed {
-			fmt.Printf("PASS: no cross-tenant leaks across %d probes (report: %s)\n", res.Probes, reportOut)
+			if res.Counterfactual != nil {
+				fmt.Printf("PASS: no statistically significant cross-tenant influence across %d probes (report: %s)\n", res.Probes, reportOut)
+			} else {
+				fmt.Printf("PASS: no cross-tenant leaks across %d probes (report: %s)\n", res.Probes, reportOut)
+			}
 		} else {
-			fmt.Printf("FAIL: %d cross-tenant leak(s) across %d probes (report: %s)\n", len(res.Leaks), res.Probes, reportOut)
+			if res.Counterfactual != nil {
+				fmt.Printf("FAIL: %d statistically significant cross-tenant flow(s) across %d probes (report: %s)\n", len(res.Leaks), res.Probes, reportOut)
+			} else {
+				fmt.Printf("FAIL: %d cross-tenant leak(s) across %d probes (report: %s)\n", len(res.Leaks), res.Probes, reportOut)
+			}
 		}
 	}
 
