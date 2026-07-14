@@ -92,7 +92,7 @@ runs:
   steps:
     - name: Set up Go
       if: inputs.binary == '' || hashFiles(inputs.binary) == ''
-      uses: actions/setup-go@v5
+      uses: actions/setup-go@v6
       with:
         go-version: ${{ inputs.go-version }}
 
@@ -174,7 +174,7 @@ runs:
 
     - name: Upload TenantProbe report
       if: always() && inputs.report-path != ''
-      uses: actions/upload-artifact@v4
+      uses: actions/upload-artifact@v7
       with:
         name: ${{ inputs.artifact-name }}
         path: ${{ inputs.report-path }}
